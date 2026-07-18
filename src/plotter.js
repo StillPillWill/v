@@ -33,6 +33,7 @@ export class ImagePlotter {
     this._paused        = false;
     this._stopped       = false;
     this._resumeResolve = null;
+    this._pendingOkResolvers = [];
   }
 
   // ── Streaming control API ──────────────────────────────────────────────────
@@ -41,7 +42,13 @@ export class ImagePlotter {
     this._paused = false;
     if (this._resumeResolve) { this._resumeResolve(); this._resumeResolve = null; }
   }
-  stop()   { this._stopped = true; this.resume(); } // unblock if paused
+  stop()   { 
+    this._stopped = true; 
+    this.resume(); 
+    const resolvers = this._pendingOkResolvers;
+    this._pendingOkResolvers = [];
+    for (const r of resolvers) r();
+  }
 
   // ── Image ingest ───────────────────────────────────────────────────────────
 
@@ -497,20 +504,29 @@ export class ImagePlotter {
     }
   }
 
-  // ── G-code streaming with pause/resume/stop ───────────────────────────────
-
   async streamToPlotter(socket, feedrateXY, feedrateZ, onProgress, isCancelled) {
     const wps = this.waypoints;
     if (!wps.length) return;
     this._stopped = false;
+    this._pendingOkResolvers = [];
+    let inFlight = 0;
+    const maxInFlight = 2; // Allow printer lookahead for smooth movement
+
+    // Helper function to wait until an 'ok' frees a slot
+    const waitOk = () => new Promise(resolve => this._pendingOkResolvers.push(resolve));
 
     for (let i = 0; i < wps.length; i++) {
-      // Check stop
       if (this._stopped || (isCancelled && isCancelled())) break;
 
-      // Check pause — await until resume() is called
       if (this._paused) {
         await new Promise(resolve => { this._resumeResolve = resolve; });
+      }
+      if (this._stopped) break;
+
+      // Wait if the queue of in-flight commands is full
+      while (inFlight >= maxInFlight && !this._stopped) {
+        await waitOk();
+        inFlight = Math.max(0, inFlight - 1);
       }
       if (this._stopped) break;
 
@@ -519,9 +535,17 @@ export class ImagePlotter {
         Math.abs(wps[i-1].x - wp.x) < 0.01 &&
         Math.abs(wps[i-1].y - wp.y) < 0.01;
       const f = isZOnly ? feedrateZ : feedrateXY;
+
+      inFlight++;
       socket.send(`gcode-plot:G1 X${wp.x.toFixed(1)} Y${wp.y.toFixed(1)} Z${wp.z.toFixed(1)} F${f}`);
+      
       if (onProgress) onProgress(i + 1, wps.length, i);
-      if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
+    }
+
+    // Wait for all remaining in-flight moves to finish executing
+    while (inFlight > 0 && !this._stopped) {
+      await waitOk();
+      inFlight = Math.max(0, inFlight - 1);
     }
 
     // Lift pen safely at end regardless of how we stopped

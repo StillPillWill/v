@@ -42,6 +42,7 @@ serial_queue_cv = threading.Condition()
 keep_running = True
 printer_connected = False
 printer_port_name = None
+active_ws_conn = None
 
 # --- Custom Static HTTP Server with JS MIME Type Enforcer ---
 class CustomHTTPHandler(http.server.SimpleHTTPRequestHandler):
@@ -118,7 +119,7 @@ def make_ws_frame(text):
 
 # --- Printer Serial Thread Loops ---
 def printer_reader_thread():
-    global in_flight, serial_port, keep_running
+    global in_flight, serial_port, keep_running, active_ws_conn
     print("[SERIAL] Reader thread started.")
     buffer = ""
     while keep_running and serial_port and serial_port.is_open:
@@ -139,6 +140,12 @@ def printer_reader_thread():
                             # Wake up queue writer thread
                             with serial_queue_cv:
                                 serial_queue_cv.notify()
+                            # Forward ok back to websocket client
+                            if active_ws_conn:
+                                try:
+                                    active_ws_conn.sendall(make_ws_frame("gcode-ok"))
+                                except:
+                                    pass
             else:
                 time.sleep(0.002)
         except Exception as e:
@@ -318,7 +325,7 @@ def disconnect_printer():
 
 # --- WebSocket Client Handling ---
 def handle_ws_client(conn, addr):
-    global serial_queue, printer_connected, printer_port_name
+    global serial_queue, printer_connected, printer_port_name, active_ws_conn
     print(f"[WS] Client connected from {addr}")
     
     # Handshake
@@ -344,6 +351,7 @@ def handle_ws_client(conn, addr):
         )
         conn.sendall(resp.encode('utf-8'))
         print("[WS] Handshake complete.")
+        active_ws_conn = conn
         
         # Send initial status
         status_msg = f"status:{'connected' if printer_connected else 'disconnected'}:{printer_port_name or ''}"
@@ -410,6 +418,7 @@ def handle_ws_client(conn, addr):
         print(f"[WS CLIENT ERROR] {e}")
     finally:
         print(f"[WS] Client disconnected from {addr}")
+        active_ws_conn = None
         conn.close()
 
 def start_ws_server():

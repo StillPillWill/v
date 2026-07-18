@@ -142,6 +142,11 @@ function connectWebSocket() {
         dom.btnConnectPrinter.classList.remove('btn-danger');
         dom.btnConnectPrinter.classList.add('btn-primary');
       }
+    } else if (data === "gcode-ok") {
+      if (imagePlotter && imagePlotter._pendingOkResolvers && imagePlotter._pendingOkResolvers.length > 0) {
+        const resolve = imagePlotter._pendingOkResolvers.shift();
+        if (resolve) resolve();
+      }
     }
   };
 
