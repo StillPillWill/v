@@ -82,11 +82,13 @@ export class ImagePlotter {
    * @param {number} minStroke  — minimum stroke length in pixels to keep (2–20)
    * @param {number} simplification — Douglas-Peucker epsilon tolerance (0.1–10.0)
    * @param {number} mergeGapMM — maximum physical gap in mm to bridge without lifting the pen (0.0-20.0)
+   * @param {string} drawingStyle — 'outlines', 'hatch', or 'crosshatch'
+   * @param {number} shadingDensity — spacing between shading lines in pixels (3–25)
    * @param {object} workspace
    * @param {number} penDownZ
    * @param {number} penUpZ
    */
-  process(resolution, threshold, minStroke, simplification, mergeGapMM, workspace, penDownZ, penUpZ) {
+  process(resolution, threshold, minStroke, simplification, mergeGapMM, drawingStyle, shadingDensity, workspace, penDownZ, penUpZ) {
     if (!this.imageBitmap) throw new Error('No image loaded');
     this._lastPenUpZ = penUpZ;
 
@@ -127,10 +129,61 @@ export class ImagePlotter {
     for (let i = 0; i < resW * resH; i++) sketch[i] = sketchFine[i] | sketchMedium[i];
 
     // ── F–I: Trace, filter, simplify, sort ────────────────────────────────
-    const rawStrokes  = this._traceStrokes(sketch, resW, resH);
-    const filtered    = rawStrokes.filter(s => s.length >= Math.max(2, minStroke));
-    const simplified  = filtered.map(s => this._douglasPeucker(s, simplification)).filter(s => s.length >= 2);
-    const sorted      = this._sortStrokes(simplified);
+    const rawOutlines  = this._traceStrokes(sketch, resW, resH);
+    const filteredOutlines = rawOutlines.filter(s => s.length >= Math.max(2, minStroke));
+    const simplifiedOutlines = filteredOutlines.map(s => this._douglasPeucker(s, simplification)).filter(s => s.length >= 2);
+
+    const shadingStrokes = [];
+    const step = Math.max(3, shadingDensity);
+
+    // Style 1: Hatch (diagonals at 45 deg: x + y = C)
+    if (drawingStyle === 'hatch' || drawingStyle === 'crosshatch') {
+      for (let c = 0; c < resW + resH; c += step) {
+        let currentStroke = [];
+        for (let x = 0; x < resW; x++) {
+          const y = c - x;
+          if (y >= 0 && y < resH) {
+            const isDark = bilateral[y * resW + x] < 128;
+            if (isDark) {
+              currentStroke.push({ x, y });
+            } else {
+              if (currentStroke.length >= 2) shadingStrokes.push(currentStroke);
+              currentStroke = [];
+            }
+          }
+        }
+        if (currentStroke.length >= 2) shadingStrokes.push(currentStroke);
+      }
+    }
+
+    // Style 2: Cross-hatch (add diagonals at -45 deg: x - y = C)
+    if (drawingStyle === 'crosshatch') {
+      for (let c = -resH; c < resW; c += step) {
+        let currentStroke = [];
+        for (let x = 0; x < resW; x++) {
+          const y = x - c;
+          if (y >= 0 && y < resH) {
+            const isDark = bilateral[y * resW + x] < 128;
+            if (isDark) {
+              currentStroke.push({ x, y });
+            } else {
+              if (currentStroke.length >= 2) shadingStrokes.push(currentStroke);
+              currentStroke = [];
+            }
+          }
+        }
+        if (currentStroke.length >= 2) shadingStrokes.push(currentStroke);
+      }
+    }
+
+    // Simplify shading strokes (straight lines -> 2 points)
+    const simplifiedShading = shadingStrokes.map(s => this._douglasPeucker(s, simplification)).filter(s => s.length >= 2);
+
+    // Combine outlines and shading
+    const allStrokes = simplifiedOutlines.concat(simplifiedShading);
+
+    // Sort together to minimize travel path
+    const sorted = this._sortStrokes(allStrokes);
 
     // ── J: Map to printer coordinates ─────────────────────────────────────
     const { centerX, centerY, workspaceWidth, workspaceHeight } = workspace;

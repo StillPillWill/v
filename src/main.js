@@ -97,6 +97,8 @@ const dom = {
   plotterMinStroke:  document.getElementById('plotter-min-stroke'),
   plotterSimplification: document.getElementById('plotter-simplification'),
   plotterMergeGap:   document.getElementById('plotter-merge-gap'),
+  plotterStyle:      document.getElementById('plotter-style'),
+  plotterShadingDensity: document.getElementById('plotter-shading-density'),
   plotterStatus:     document.getElementById('plotter-status'),
   plotterBtnProcess: document.getElementById('btn-plotter-process'),
   plotterBtnPlot:    document.getElementById('btn-plotter-plot'),
@@ -874,6 +876,12 @@ function initPlotter() {
   if (d.plotterMergeGap) {
     d.plotterMergeGap.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
   }
+  if (d.plotterStyle) {
+    d.plotterStyle.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+  }
+  if (d.plotterShadingDensity) {
+    d.plotterShadingDensity.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+  }
 
   // ── Plot ─────────────────────────────────────────────────────────────────
   d.plotterBtnPlot.addEventListener('click', async () => {
@@ -1005,6 +1013,8 @@ function _plotterRunProcess() {
     const minStroke = parseInt(dom.plotterMinStroke?.value, 10) || 8;
     const simplification = parseFloat(dom.plotterSimplification?.value) || 1.5;
     const mergeGapMM = parseFloat(dom.plotterMergeGap?.value) || 4.0;
+    const drawingStyle = dom.plotterStyle?.value || 'outlines';
+    const shadingDensity = parseInt(dom.plotterShadingDensity?.value, 10) || 6;
 
     // Grab current workspace dimensions from inputs (fall back to handProcessor fields)
     const wW = parseFloat(dom.workspaceWidthInput?.value)  || handProcessor.workspaceWidth  || 200;
@@ -1018,7 +1028,7 @@ function _plotterRunProcess() {
     };
 
     const count = imagePlotter.process(
-      numLines, threshold, minStroke, simplification, mergeGapMM, workspace, penDownZ, penUpZ
+      numLines, threshold, minStroke, simplification, mergeGapMM, drawingStyle, shadingDensity, workspace, penDownZ, penUpZ
     );
 
     // Show preview

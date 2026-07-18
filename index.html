@@ -181,9 +181,24 @@
                 </div>
               </div>
               
-              <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px;">
+              <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px;">
                 <label style="color: var(--text-muted); font-size: 0.75rem;">Keep Pen Down (max gap to bridge: 0-20mm)</label>
                 <input type="number" id="plotter-merge-gap" value="4.0" min="0.0" max="20.0" step="0.5" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <label style="color: var(--text-muted); font-size: 0.75rem;">Drawing Style</label>
+                  <select id="plotter-style" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: var(--font-sans); border-radius: 4px; padding: 4px 8px; font-size: 0.85rem; outline: none; cursor: pointer; height: 30px;">
+                    <option value="outlines" selected>Outlines Only</option>
+                    <option value="hatch">Outlines + Hatch</option>
+                    <option value="crosshatch">Outlines + Cross-Hatch</option>
+                  </select>
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <label style="color: var(--text-muted); font-size: 0.75rem;">Shading Spacing (px)</label>
+                  <input type="number" id="plotter-shading-density" value="6" min="3" max="25" step="1" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
+                </div>
               </div>
 
               <div id="plotter-status" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px; min-height: 18px;"></div>
