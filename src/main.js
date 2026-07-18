@@ -757,6 +757,12 @@ function update(time) {
   }
 }
 
+// ─── Image Plotter state (must be declared before initPlotter() is called) ───
+const imagePlotter = new ImagePlotter();
+let plotterCamStream = null;
+let plottingActive  = false;
+let plotCancelled   = false;
+
 // --- Initialize App ---
 initEvents();
 initPlotter();
@@ -765,11 +771,6 @@ requestAnimationFrame(update);
 console.log("Nexus-4 Printer Controller Initialized.");
 
 // ─── Image Plotter UI ────────────────────────────────────────────────────────
-
-const imagePlotter = new ImagePlotter();
-let plotterCamStream = null;
-let plottingActive  = false;
-let plotCancelled   = false;
 
 function initPlotter() {
   const d = dom;
