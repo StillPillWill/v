@@ -54,7 +54,8 @@ export class HandTrackingProcessor {
     this.filterPitch = new OneEuroFilter(0.4, 0.03, 1.0);   // Wrist tilt (highly responsive)
 
     this.isTracking = false;
-    this.workspaceSize = 200.0;
+    this.workspaceWidth = 200.0;
+    this.workspaceHeight = 200.0;
     this.centerX = 292.0; // Center of X bed (585 / 2)
     this.centerY = 387.0; // Center of Y bed (775 / 2)
     this.lastValidTargets = { x: 292, y: 387, z: 15, pitch: 0 };
@@ -101,14 +102,14 @@ export class HandTrackingProcessor {
     const targetNx = (nxCurve / 2.0) + 0.5;
     const targetNy = (nyCurve / 2.0) + 0.5;
 
-    // Map to physical printer workspace (dynamically sized and centered area)
-    const minX = this.centerX - this.workspaceSize / 2.0;
-    const maxX = this.centerX + this.workspaceSize / 2.0;
-    const minY = this.centerY - this.workspaceSize / 2.0;
-    const maxY = this.centerY + this.workspaceSize / 2.0;
+    // Map to physical printer workspace (dynamically sized rectangular area)
+    const minX = this.centerX - this.workspaceWidth / 2.0;
+    const maxX = this.centerX + this.workspaceWidth / 2.0;
+    const minY = this.centerY - this.workspaceHeight / 2.0;
+    const maxY = this.centerY + this.workspaceHeight / 2.0;
 
-    const rawTargetX = minX + targetNx * this.workspaceSize;
-    const rawTargetY = minY + targetNy * this.workspaceSize;
+    const rawTargetX = minX + targetNx * this.workspaceWidth;
+    const rawTargetY = minY + targetNy * this.workspaceHeight;
 
     // Dummy Z (actual Z is driven by fistClosed binary check in main.js)
     const rawTargetZ = 15.0;

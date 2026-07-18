@@ -156,8 +156,8 @@
               <div id="tracking-status-text" class="tracking-status lost" style="font-size: 0.8rem; padding: 4px 12px; bottom: 12px; right: 12px;">TRACKING OFF</div>
             </div>
             
-            <div class="webcam-calib-info" style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 16px; font-size: 0.85rem; padding: 12px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; border: 1px solid var(--border-color);">
-              <div style="display: flex; justify-content: space-between; align-items: center; grid-column: span 3;">
+            <div class="webcam-calib-info" style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; font-size: 0.85rem; padding: 12px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; border: 1px solid var(--border-color);">
+              <div style="display: flex; justify-content: space-between; align-items: center; grid-column: span 2;">
                 <span style="color: var(--text-muted); font-weight: 500;">Grip State (Pen Trigger):</span>
                 <span id="grip-status" class="status-badge offline" style="background: rgba(139, 148, 158, 0.15); color: #8b949e; border-color: rgba(139, 148, 158, 0.3); font-size: 0.85rem; padding: 4px 12px;">OPEN (PEN UP)</span>
               </div>
@@ -170,8 +170,12 @@
                 <input type="number" id="pen-up-z" value="15.0" step="0.5" min="0.0" max="50.0" style="width: 100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; font-weight: bold; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
               </div>
               <div style="display: flex; flex-direction: column; gap: 4px;">
-                <label for="workspace-size" style="color: var(--text-muted); font-weight: 500;">Work Area (mm):</label>
-                <input type="number" id="workspace-size" value="200.0" step="10" min="50.0" max="400.0" style="width: 100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; font-weight: bold; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
+                <label for="workspace-width" style="color: var(--text-muted); font-weight: 500;">Work Width X (mm):</label>
+                <input type="number" id="workspace-width" value="200.0" step="10" min="50.0" max="500.0" style="width: 100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; font-weight: bold; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label for="workspace-height" style="color: var(--text-muted); font-weight: 500;">Work Height Y (mm):</label>
+                <input type="number" id="workspace-height" value="200.0" step="10" min="50.0" max="600.0" style="width: 100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; font-weight: bold; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
               </div>
             </div>
           </div>

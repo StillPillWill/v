@@ -80,7 +80,8 @@ const dom = {
   gripStatus: document.getElementById('grip-status'),
   penDownZSlider: document.getElementById('pen-down-z'),
   penUpZSlider: document.getElementById('pen-up-z'),
-  workspaceSizeInput: document.getElementById('workspace-size')
+  workspaceWidthInput: document.getElementById('workspace-width'),
+  workspaceHeightInput: document.getElementById('workspace-height')
 };
 
 // --- WebSocket Management ---
@@ -232,7 +233,8 @@ function initEvents() {
   // Initialize values from HTML inputs on load
   if (dom.penDownZSlider) penDownZ = parseFloat(dom.penDownZSlider.value) || 0.0;
   if (dom.penUpZSlider) penUpZ = parseFloat(dom.penUpZSlider.value) || 15.0;
-  if (dom.workspaceSizeInput) handProcessor.workspaceSize = parseFloat(dom.workspaceSizeInput.value) || 200.0;
+  if (dom.workspaceWidthInput) handProcessor.workspaceWidth = parseFloat(dom.workspaceWidthInput.value) || 200.0;
+  if (dom.workspaceHeightInput) handProcessor.workspaceHeight = parseFloat(dom.workspaceHeightInput.value) || 200.0;
 
   // Pen Height calibration number inputs (updates live, listening to both input and change events for cross-browser safety)
   const handlePenDownChange = (e) => {
@@ -255,16 +257,27 @@ function initEvents() {
   dom.penUpZSlider.addEventListener('input', handlePenUpChange);
   dom.penUpZSlider.addEventListener('change', handlePenUpChange);
 
-  // Configurable Workspace Size handler
-  const handleWorkspaceSizeChange = (e) => {
+  // Configurable Workspace Width handler
+  const handleWorkspaceWidthChange = (e) => {
     const val = parseFloat(e.target.value);
-    if (!isNaN(val) && val >= 50.0 && val <= 400.0) {
-      handProcessor.workspaceSize = val;
-      console.log("[CALIBRATION] Workspace Size updated to:", val, "mm");
+    if (!isNaN(val) && val >= 50.0 && val <= 500.0) {
+      handProcessor.workspaceWidth = val;
+      console.log("[CALIBRATION] Workspace Width X updated to:", val, "mm");
     }
   };
-  dom.workspaceSizeInput.addEventListener('input', handleWorkspaceSizeChange);
-  dom.workspaceSizeInput.addEventListener('change', handleWorkspaceSizeChange);
+  dom.workspaceWidthInput.addEventListener('input', handleWorkspaceWidthChange);
+  dom.workspaceWidthInput.addEventListener('change', handleWorkspaceWidthChange);
+
+  // Configurable Workspace Height handler
+  const handleWorkspaceHeightChange = (e) => {
+    const val = parseFloat(e.target.value);
+    if (!isNaN(val) && val >= 50.0 && val <= 600.0) {
+      handProcessor.workspaceHeight = val;
+      console.log("[CALIBRATION] Workspace Height Y updated to:", val, "mm");
+    }
+  };
+  dom.workspaceHeightInput.addEventListener('input', handleWorkspaceHeightChange);
+  dom.workspaceHeightInput.addEventListener('change', handleWorkspaceHeightChange);
 }
 
 function updateCartesianTexts() {
