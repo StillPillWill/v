@@ -176,15 +176,28 @@ def printer_writer_thread():
 def try_connect_printer():
     global serial_port, printer_connected, printer_port_name
     
-    # Try current active COM ports
-    ports = [p.device for p in serial.tools.list_ports.comports()]
-    print(f"[SERIAL] Scanning COM ports: {ports}")
+    # Try current active COM ports, filtering out wireless and virtual debug ports
+    raw_ports = serial.tools.list_ports.comports()
+    filtered_devices = []
+    for p in raw_ports:
+        dev_lower = p.device.lower()
+        desc_lower = p.description.lower()
+        # Ignore obvious wireless/debug virtual ports
+        is_virtual = False
+        for skip in ['bluetooth', 'incoming', 'wlan', 'debug', 'airpod', 'awdl', 'wireless']:
+            if skip in dev_lower or skip in desc_lower:
+                is_virtual = True
+                break
+        if not is_virtual:
+            filtered_devices.append(p.device)
+            
+    print(f"[SERIAL] Scanning COM ports (filtered): {filtered_devices}")
     
     # Check preferred ports first (highest priority USB serials on Windows/Mac/Linux)
     preferred_keywords = ['usb', 'modem', 'uart', 'serial', 'slab', 'ch34', 'ttyusb', 'ttyacm', 'com13', 'com5']
     preferred_ports = []
     other_ports = []
-    for port in ports:
+    for port in filtered_devices:
         is_preferred = False
         for kw in preferred_keywords:
             if kw in port.lower():
