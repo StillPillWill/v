@@ -314,7 +314,7 @@ export class WebSerialController {
       const vNorm = this.shaper.vel.norm();
       const feedrate = Math.floor(Math.min(99999, Math.max(1000, vNorm * 60)));
 
-      const cmd = \`G1 X\${safePos.x.toFixed(1)} Y\${safePos.y.toFixed(1)} F\${feedrate}\`;
+      const cmd = `G1 X${safePos.x.toFixed(1)} Y${safePos.y.toFixed(1)} F${feedrate}`;
       this.send(cmd).then(success => {
         if (success) {
           this.lastSentX = safePos.x;
