@@ -230,20 +230,30 @@ function initEvents() {
     }
   });
 
-  // Pen Height calibration number inputs (updates live)
-  dom.penDownZSlider.addEventListener('input', (e) => {
+  // Initialize values from HTML inputs on load
+  if (dom.penDownZSlider) penDownZ = parseFloat(dom.penDownZSlider.value) || 0.0;
+  if (dom.penUpZSlider) penUpZ = parseFloat(dom.penUpZSlider.value) || 15.0;
+
+  // Pen Height calibration number inputs (updates live, listening to both input and change events for cross-browser safety)
+  const handlePenDownChange = (e) => {
     const val = parseFloat(e.target.value);
     if (!isNaN(val)) {
       penDownZ = val;
+      console.log("[CALIBRATION] Pen Down Z updated to:", penDownZ);
     }
-  });
+  };
+  dom.penDownZSlider.addEventListener('input', handlePenDownChange);
+  dom.penDownZSlider.addEventListener('change', handlePenDownChange);
 
-  dom.penUpZSlider.addEventListener('input', (e) => {
+  const handlePenUpChange = (e) => {
     const val = parseFloat(e.target.value);
     if (!isNaN(val)) {
       penUpZ = val;
+      console.log("[CALIBRATION] Pen Up Z updated to:", penUpZ);
     }
-  });
+  };
+  dom.penUpZSlider.addEventListener('input', handlePenUpChange);
+  dom.penUpZSlider.addEventListener('change', handlePenUpChange);
 }
 
 function updateCartesianTexts() {
