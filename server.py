@@ -180,43 +180,80 @@ def try_connect_printer():
     ports = [p.device for p in serial.tools.list_ports.comports()]
     print(f"[SERIAL] Scanning COM ports: {ports}")
     
-    # Check COM13 first, then COM5, then COM3, then COM4, then others
+    # Check preferred ports first (highest priority COM13)
     preferred = ['COM13', 'COM5', 'COM3', 'COM4']
-    for p in preferred:
+    for p in reversed(preferred):
         if p in ports:
             ports.remove(p)
             ports.insert(0, p)
             
+    bauds = [115200, 250000]
+    
     for port in ports:
-        try:
-            print(f"[SERIAL] Attempting to probe {port} at {BAUD_RATE}...")
-            s = serial.Serial(port, BAUD_RATE, timeout=1.5)
-            time.sleep(1.8) # Wait for reboot
-            s.write(b"M115\n") # Query firmware Info
-            time.sleep(0.5)
-            resp = s.read(s.in_waiting or 100).decode('utf-8', errors='ignore')
-            if "FIRMWARE_NAME" in resp or "ok" in resp.lower() or "marlin" in resp.lower():
-                print(f"[SERIAL] Printer identified on {port}!")
-                serial_port = s
-                printer_port_name = port
-                printer_connected = True
+        for baud in bauds:
+            try:
+                print(f"[SERIAL] Attempting to probe {port} at {baud} baud...")
+                s = serial.Serial(port, baud, timeout=1.5)
                 
-                # Start reading/writing threads
-                threading.Thread(target=printer_reader_thread, daemon=True).start()
-                threading.Thread(target=printer_writer_thread, daemon=True).start()
+                # Wait for printer to complete reboot cycle (some take longer)
+                time.sleep(2.5) 
                 
-                # Startup instructions
-                s.write(b"M999\n") # Reset errors
-                time.sleep(0.1)
-                s.write(b"G90\n")  # Absolute mode
-                time.sleep(0.1)
-                s.write(b"G28\n")  # Home
-                print("[SERIAL] Home G28 sent to printer.")
-                return True
-            else:
+                # Clear read buffer
+                if s.in_waiting > 0:
+                    startup_text = s.read(s.in_waiting).decode('utf-8', errors='ignore')
+                    print(f"[SERIAL] Startup text read: {startup_text.strip()}")
+                    if "start" in startup_text.lower() or "marlin" in startup_text.lower() or "echo:" in startup_text.lower():
+                        print(f"[SERIAL] Printer identified via startup text on {port}!")
+                        serial_port = s
+                        printer_port_name = port
+                        printer_connected = True
+                        break
+
+                # Send empty command (newline) and query info
+                s.write(b"\n")
+                time.sleep(0.2)
+                s.write(b"M115\n")
+                time.sleep(0.8)
+                
+                resp = s.read(s.in_waiting or 150).decode('utf-8', errors='ignore')
+                print(f"[SERIAL] Response read: {resp.strip()}")
+                
+                if "FIRMWARE_NAME" in resp or "ok" in resp.lower() or "marlin" in resp.lower() or "start" in resp.lower():
+                    print(f"[SERIAL] Printer identified on {port}!")
+                    serial_port = s
+                    printer_port_name = port
+                    printer_connected = True
+                    break
+                
+                # Fallback: If it's COM13 or COM5 and opened successfully but didn't respond to query,
+                # we force connect to it anyway because USB serial converters are almost always the target printer.
+                if port in ['COM13', 'COM5']:
+                    print(f"[SERIAL] Warning: {port} opened successfully but query timed out. Force connecting as fallback...")
+                    serial_port = s
+                    printer_port_name = port
+                    printer_connected = True
+                    break
+                
                 s.close()
-        except Exception as e:
-            print(f"[SERIAL] Failed on {port}: {e}")
+            except Exception as e:
+                print(f"[SERIAL] Failed on {port} at {baud}: {e}")
+                
+        if printer_connected:
+            # Start reading/writing threads
+            threading.Thread(target=printer_reader_thread, daemon=True).start()
+            threading.Thread(target=printer_writer_thread, daemon=True).start()
+            
+            # Startup G-code instructions
+            try:
+                serial_port.write(b"M999\n") # Reset errors
+                time.sleep(0.1)
+                serial_port.write(b"G90\n")  # Absolute mode
+                time.sleep(0.1)
+                serial_port.write(b"G28\n")  # Home
+                print(f"[SERIAL] Connected successfully and sent G28 homing to {printer_port_name}.")
+            except Exception as ex:
+                print(f"[SERIAL ERROR] Failed to send initialization gcode: {ex}")
+            return True
             
     print("[SERIAL] Auto-connect failed. No printer detected.")
     return False
