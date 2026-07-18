@@ -161,19 +161,13 @@
                 <span style="color: var(--text-muted); font-weight: 500;">Grip State (Pen Trigger):</span>
                 <span id="grip-status" class="status-badge offline" style="background: rgba(139, 148, 158, 0.15); color: #8b949e; border-color: rgba(139, 148, 158, 0.3); font-size: 0.85rem; padding: 4px 12px;">OPEN (PEN UP)</span>
               </div>
-              <div style="display: flex; flex-direction: column; gap: 4px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <label for="pen-down-z" style="color: var(--text-muted); font-weight: 500;">Pen Down Z (Offset)</label>
-                  <span class="mono value" id="pen-down-val" style="color: var(--accent-base); font-weight: bold;">0.0</span>
-                </div>
-                <input type="range" id="pen-down-z" min="-5.0" max="15.0" value="0.0" step="0.5" class="neon-slider" style="width: 100%; height: 6px; background: #1f242e;" />
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label for="pen-down-z" style="color: var(--text-muted); font-weight: 500;">Pen Down Z (Offset):</label>
+                <input type="number" id="pen-down-z" value="0.0" step="0.5" min="-10.0" max="30.0" style="width: 80px; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; font-weight: bold; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
               </div>
-              <div style="display: flex; flex-direction: column; gap: 4px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <label for="pen-up-z" style="color: var(--text-muted); font-weight: 500;">Pen Up Z</label>
-                  <span class="mono value" id="pen-up-val" style="color: var(--accent-base); font-weight: bold;">15.0</span>
-                </div>
-                <input type="range" id="pen-up-z" min="0.0" max="40.0" value="15.0" step="0.5" class="neon-slider" style="width: 100%; height: 6px; background: #1f242e;" />
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label for="pen-up-z" style="color: var(--text-muted); font-weight: 500;">Pen Up Z:</label>
+                <input type="number" id="pen-up-z" value="15.0" step="0.5" min="0.0" max="50.0" style="width: 80px; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; font-weight: bold; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
               </div>
             </div>
           </div>

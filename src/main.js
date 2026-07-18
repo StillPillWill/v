@@ -230,15 +230,19 @@ function initEvents() {
     }
   });
 
-  // Pen Height calibration sliders
+  // Pen Height calibration number inputs (updates live)
   dom.penDownZSlider.addEventListener('input', (e) => {
-    penDownZ = parseFloat(e.target.value);
-    dom.penDownValText.textContent = penDownZ.toFixed(1);
+    const val = parseFloat(e.target.value);
+    if (!isNaN(val)) {
+      penDownZ = val;
+    }
   });
 
   dom.penUpZSlider.addEventListener('input', (e) => {
-    penUpZ = parseFloat(e.target.value);
-    dom.penUpValText.textContent = penUpZ.toFixed(1);
+    const val = parseFloat(e.target.value);
+    if (!isNaN(val)) {
+      penUpZ = val;
+    }
   });
 }
 
@@ -482,19 +486,17 @@ function onHandResults(results) {
     dom.trackingStatusBadge.className = 'status-badge offline';
     
     handProcessor.isTracking = false;
-    
-    // Slower decay on tracking lost to bridge short drops
-    fistConfidence = Math.max(0.0, fistConfidence - 0.05);
-    fistClosed = (fistConfidence > 0.4);
 
+    // Do NOT reset fistClosed, fistConfidence, or Z target when tracking is lost!
+    // They freeze at their last valid values so the pen doesn't jump up when the hand goes off-screen.
     if (fistClosed) {
-      dom.gripStatus.textContent = 'CLOSED (PEN DOWN)';
+      dom.gripStatus.textContent = 'CLOSED (PEN DOWN) - FROZEN';
       dom.gripStatus.className = 'status-badge';
       dom.gripStatus.style.background = 'rgba(255, 170, 0, 0.15)';
       dom.gripStatus.style.color = '#ffaa00';
       dom.gripStatus.style.borderColor = 'rgba(255, 170, 0, 0.3)';
     } else {
-      dom.gripStatus.textContent = 'OPEN (PEN UP)';
+      dom.gripStatus.textContent = 'OPEN (PEN UP) - FROZEN';
       dom.gripStatus.className = 'status-badge offline';
       dom.gripStatus.style.background = 'rgba(139, 148, 158, 0.15)';
       dom.gripStatus.style.color = '#8b949e';
@@ -504,17 +506,28 @@ function onHandResults(results) {
 }
 
 function checkFistClosed(landmarks) {
-  const dx = landmarks[9].x - landmarks[0].x;
-  const dy = landmarks[9].y - landmarks[0].y;
-  const dz = landmarks[9].z - landmarks[0].z;
-  const handSize = Math.sqrt(dx*dx + dy*dy + dz*dz) + 1e-6;
+  // Distance from wrist (0) to knuckle (PIP joints: 6, 10, 14, 18)
+  const d0_6 = Math.hypot(landmarks[6].x - landmarks[0].x, landmarks[6].y - landmarks[0].y, landmarks[6].z - landmarks[0].z);
+  const d0_8 = Math.hypot(landmarks[8].x - landmarks[0].x, landmarks[8].y - landmarks[0].y, landmarks[8].z - landmarks[0].z);
 
-  const indexDist = Math.sqrt((landmarks[8].x - landmarks[5].x)**2 + (landmarks[8].y - landmarks[5].y)**2 + (landmarks[8].z - landmarks[5].z)**2) / handSize;
-  const middleDist = Math.sqrt((landmarks[12].x - landmarks[9].x)**2 + (landmarks[12].y - landmarks[9].y)**2 + (landmarks[12].z - landmarks[9].z)**2) / handSize;
-  const ringDist = Math.sqrt((landmarks[16].x - landmarks[13].x)**2 + (landmarks[16].y - landmarks[13].y)**2 + (landmarks[16].z - landmarks[13].z)**2) / handSize;
-  const pinkyDist = Math.sqrt((landmarks[20].x - landmarks[17].x)**2 + (landmarks[20].y - landmarks[17].y)**2 + (landmarks[20].z - landmarks[17].z)**2) / handSize;
+  const d0_10 = Math.hypot(landmarks[10].x - landmarks[0].x, landmarks[10].y - landmarks[0].y, landmarks[10].z - landmarks[0].z);
+  const d0_12 = Math.hypot(landmarks[12].x - landmarks[0].x, landmarks[12].y - landmarks[0].y, landmarks[12].z - landmarks[0].z);
 
-  return indexDist < 0.50 && middleDist < 0.50 && ringDist < 0.50 && pinkyDist < 0.50;
+  const d0_14 = Math.hypot(landmarks[14].x - landmarks[0].x, landmarks[14].y - landmarks[0].y, landmarks[14].z - landmarks[0].z);
+  const d0_16 = Math.hypot(landmarks[16].x - landmarks[0].x, landmarks[16].y - landmarks[0].y, landmarks[16].z - landmarks[0].z);
+
+  const d0_18 = Math.hypot(landmarks[18].x - landmarks[0].x, landmarks[18].y - landmarks[0].y, landmarks[18].z - landmarks[0].z);
+  const d0_20 = Math.hypot(landmarks[20].x - landmarks[0].x, landmarks[20].y - landmarks[0].y, landmarks[20].z - landmarks[0].z);
+
+  // A finger is folded if its tip is closer to the wrist than its PIP joint
+  const indexFolded = d0_8 < d0_6;
+  const middleFolded = d0_12 < d0_10;
+  const ringFolded = d0_16 < d0_14;
+  const pinkyFolded = d0_20 < d0_18;
+
+  // We require at least 3 out of 4 fingers to be folded to call it a fist (discounts thumb)
+  const foldedCount = (indexFolded ? 1 : 0) + (middleFolded ? 1 : 0) + (ringFolded ? 1 : 0) + (pinkyFolded ? 1 : 0);
+  return foldedCount >= 3;
 }
 
 function drawHandSkeleton(ctx, landmarks) {
@@ -609,7 +622,7 @@ function update(time) {
 
   // 2. Webcam Coordinate Smoothing
   if (webcamActive && handProcessor.isTracking) {
-    const k_pos = 12.0;
+    const k_pos = 4.5;
     
     targetX += (webcamTargetX - targetX) * (1 - Math.exp(-k_pos * dt));
     targetY += (webcamTargetY - targetY) * (1 - Math.exp(-k_pos * dt));
