@@ -181,7 +181,7 @@ def try_connect_printer():
     print(f"[SERIAL] Scanning COM ports: {ports}")
     
     # Check preferred ports first (highest priority USB serials on Windows/Mac/Linux)
-    preferred_keywords = ['usbserial', 'usbmodem', 'ttyusb', 'ttyacm', 'com13', 'com5']
+    preferred_keywords = ['usb', 'modem', 'uart', 'serial', 'slab', 'ch34', 'ttyusb', 'ttyacm', 'com13', 'com5']
     preferred_ports = []
     other_ports = []
     for port in ports:
@@ -238,7 +238,7 @@ def try_connect_printer():
                 # Fallback: If it's a USB serial port and opened successfully but timed out,
                 # we force connect to it anyway because USB serial converters are almost always the target printer.
                 is_usb_serial = False
-                for kw in ['usbserial', 'usbmodem', 'ttyusb', 'ttyacm', 'com13', 'com5']:
+                for kw in ['usb', 'modem', 'uart', 'serial', 'slab', 'ch34', 'ttyusb', 'ttyacm', 'com13', 'com5']:
                     if kw in port.lower():
                         is_usb_serial = True
                         break
