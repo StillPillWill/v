@@ -13,14 +13,16 @@ cd v
 ```
 
 ### 2. Serve the directory
-You just need a basic static file server to serve the HTML/JS files so the browser can load the ES modules. You can use anything:
+Because of Windows MIME type restrictions for ES modules, we recommend running our custom zero-dependency launcher script:
 
-**Using Python:**
 ```bash
-python -m http.server 8000
+python server.py
 ```
-*Or, if you use VS Code, just click "Go Live" with the Live Server extension.*
-*Or using npx: `npx serve .`*
+
+*Or if you are on macOS/Linux:*
+```bash
+python3 server.py
+```
 
 ### 3. Connect to your Printer
 1. Open Google Chrome or Microsoft Edge and navigate to `http://localhost:8000`
