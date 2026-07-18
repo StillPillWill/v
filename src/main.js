@@ -9,6 +9,7 @@ import {
 import { RobotPhysicsSimulator } from './physics.js';
 import { ScrollingChart } from './charts.js';
 import { HandTrackingProcessor } from './handTracker.js';
+import { WebSerialController } from './webSerialController.js';
 
 // --- Telemetry and Control State ---
 let controlMode = 'manual'; // 'manual', 'kinematic', 'planner'
@@ -41,10 +42,9 @@ let pathProgress = 0;
 let pathSpeedScale = 1.0;
 let interpolationMode = 'joint';
 
-// --- WebSocket API Client ---
-let socket = null;
+// --- Web Serial API Client ---
+const printerController = new WebSerialController();
 let apiConnected = false;
-const API_URL = 'ws://localhost:8080/visualizer';
 
 // --- MediaPipe Webcam Tracking ---
 let webcamActive = false;
@@ -140,6 +140,7 @@ const dom = {
   telemetryZ: document.getElementById('telemetry-z'),
   telemetryStatus: document.getElementById('telemetry-status'),
   apiStatus: document.getElementById('api-status'),
+  btnConnectPrinter: document.getElementById('btn-connect-printer'),
   ikStatusText: document.getElementById('ik-status-text'),
   ikStatusBox: document.getElementById('ik-status-box'),
   
@@ -201,81 +202,33 @@ const getControlSettings = () => ({
   gravityComp: dom.toggleGravity.checked
 });
 
-// --- Initialize Socket Connection ---
-function initSocket() {
-  try {
-    socket = new WebSocket(API_URL);
-
-    socket.onopen = () => {
+// --- Initialize Web Serial Connection ---
+function initSerial() {
+  printerController.onStatusChange = (status) => {
+    if (status === 'connected') {
       apiConnected = true;
       dom.apiStatus.textContent = 'CONNECTED';
       dom.apiStatus.className = 'value status-badge online';
-      console.log('Connected to WebSocket API bridge server.');
-
-      window.onerror = (message, source, lineno) => {
-        socket.send(JSON.stringify({
-          type: 'browser_error',
-          message: `${message}`,
-          lineno: lineno
-        }));
-      };
-      
-      window.remoteLog = (msg) => {
-        socket.send(JSON.stringify({
-          type: 'browser_log',
-          message: msg
-        }));
-      };
-    };
-
-    socket.onclose = () => {
+      dom.btnConnectPrinter.textContent = 'Disconnect Printer';
+      dom.btnConnectPrinter.classList.remove('btn-primary');
+      dom.btnConnectPrinter.classList.add('btn-danger');
+    } else {
       apiConnected = false;
-      dom.apiStatus.textContent = 'OFFLINE';
+      dom.apiStatus.textContent = 'DISCONNECTED';
       dom.apiStatus.className = 'value status-badge offline';
-      // Reconnect after 3 seconds
-      setTimeout(initSocket, 3000);
-    };
+      dom.btnConnectPrinter.textContent = 'Connect Printer';
+      dom.btnConnectPrinter.classList.remove('btn-danger');
+      dom.btnConnectPrinter.classList.add('btn-primary');
+    }
+  };
 
-    socket.onerror = () => {
-      apiConnected = false;
-      dom.apiStatus.textContent = 'OFFLINE';
-      dom.apiStatus.className = 'value status-badge offline';
-    };
-
-    socket.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        
-        if (msg.type === 'external_disconnect') {
-          // Revert back to local CTC mode
-          physicsSim.controlMode = 'local_ctc';
-          dom.controlModeSelect.value = 'local_ctc';
-          console.log('External controller disconnected. Reverting to local CTC.');
-        } else if (msg.type === 'torques') {
-          // Direct torque command override
-          physicsSim.controlMode = 'external_torque';
-          dom.controlModeSelect.value = 'external_torque';
-          for (let i = 0; i < 4; i++) {
-            physicsSim.appliedTorques[i] = msg.data[i];
-          }
-        } else if (msg.type === 'targets') {
-          // Desired joint targets command override
-          for (let i = 0; i < 4; i++) {
-            jointTargets[i] = msg.data[i];
-            
-            // Update UI sliders/texts
-            const degVal = Math.round(radToDeg(jointTargets[i]));
-            dom.jointSliders[i].value = degVal;
-            dom.jointValTexts[i].textContent = degVal;
-          }
-        }
-      } catch (err) {
-        console.error('Error handling WebSocket message:', err);
-      }
-    };
-  } catch (e) {
-    console.error('WebSocket connection error:', e);
-  }
+  dom.btnConnectPrinter.addEventListener('click', async () => {
+    if (apiConnected) {
+      await printerController.disconnect();
+    } else {
+      await printerController.connect();
+    }
+  });
 }
 
 // --- Initialize Event Handlers ---
@@ -1428,22 +1381,13 @@ function update(time) {
     document.getElementById(`chart-err-j${i+1}`).textContent = (errDeg >= 0 ? '+' : '') + errDeg.toFixed(1) + '°';
   }
 
-  // 5. Stream telemetry frame to connected controller script via WebSocket
-  if (apiConnected && socket.readyState === 1) {
-    const telFrame = {
-      timestamp: performance.now(),
-      positions: physicsSim.positions,
-      velocities: physicsSim.velocities,
-      appliedTorques: physicsSim.appliedTorques,
-      fistClosed: fistClosed, // Stream fist state for grasping commands
-      cartesian: {
-        x: actualFK.pe.x,
-        y: actualFK.pe.y,
-        z: actualFK.pe.z,
-        pitch: radToDeg(physicsSim.positions[1] + physicsSim.positions[2] + physicsSim.positions[3])
-      }
-    };
-    socket.send(JSON.stringify(telFrame));
+  // 5. Update Web Serial Controller with new Target directly (Zero latency)
+  if (apiConnected) {
+    const pen = fistClosed ? 1.0 : 0.0;
+    
+    // Instead of streaming JSON over a WebSocket, we inject the Cartesian targets 
+    // directly into the AlphaBeta filter running on the WebSerialController.
+    printerController.updateTarget(targetX, targetY, targetZ, pen);
   }
 
   controls.update();
@@ -1453,6 +1397,6 @@ function update(time) {
 // --- Initialize App ---
 initEvents();
 initThree();
-initSocket();
+initSerial();
 requestAnimationFrame(update);
 console.log("Nexus-4 Advanced Simulation Controller Initialized Successfully.");

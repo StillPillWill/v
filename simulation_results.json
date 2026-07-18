@@ -1,0 +1,262 @@
+{
+  "test_results": [
+    {
+      "name": "Step Response (100mm)",
+      "results": {
+        "pipeline_latency_ms": {
+          "mean": 35.422860896582016,
+          "max": 51.70551815129354,
+          "p95": 43.8035281509932,
+          "std": 5.274227934642706,
+          "count": 355
+        },
+        "control_loop_latency_us": {
+          "mean": 15.733066723138714,
+          "max": 70.90000144671649,
+          "p95": 18.499995348975062,
+          "std": 2.826149305312774,
+          "count": 1500
+        },
+        "position_error_mm": {
+          "mean": 83.35596128066172,
+          "max": 100.01252834891325,
+          "p95": 100.01252834891325,
+          "std": 37.245216736495486,
+          "count": 6000
+        },
+        "velocity_error_mm_s": {
+          "mean": 16.666666666666668,
+          "max": 100000.0,
+          "p95": 0.0,
+          "std": 1290.8868613820844,
+          "count": 6000
+        },
+        "total_frames_simulated": 359,
+        "tracker_samples_delivered": 355
+      }
+    },
+    {
+      "name": "Sine Wave 1Hz 50mm",
+      "results": {
+        "pipeline_latency_ms": {
+          "mean": 35.59181926403696,
+          "max": 48.97830402798231,
+          "p95": 43.73657702491407,
+          "std": 5.180173219826691,
+          "count": 597
+        },
+        "control_loop_latency_us": {
+          "mean": 15.64607996842824,
+          "max": 83.29999400302768,
+          "p95": 19.60000372491777,
+          "std": 3.455221621826446,
+          "count": 2500
+        },
+        "position_error_mm": {
+          "mean": 31.830936988282048,
+          "max": 50.05003719490372,
+          "p95": 49.851373764543446,
+          "std": 15.388105988658738,
+          "count": 10000
+        },
+        "velocity_error_mm_s": {
+          "mean": 199.96858428017256,
+          "max": 314.1571982781102,
+          "p95": 313.1903020112219,
+          "std": 96.6982703239111,
+          "count": 10000
+        },
+        "total_frames_simulated": 600,
+        "tracker_samples_delivered": 597
+      }
+    },
+    {
+      "name": "Circle 40mm 0.5Hz",
+      "results": {
+        "pipeline_latency_ms": {
+          "mean": 35.49971428131458,
+          "max": 50.12301753424353,
+          "p95": 44.36746944222136,
+          "std": 5.115174309832697,
+          "count": 595
+        },
+        "control_loop_latency_us": {
+          "mean": 15.819280018331483,
+          "max": 206.9000038318336,
+          "p95": 18.40000186348334,
+          "std": 4.631172354649144,
+          "count": 2500
+        },
+        "position_error_mm": {
+          "mean": 40.00031329275128,
+          "max": 40.06373774071537,
+          "p95": 40.062959488398135,
+          "std": 0.04486508428590021,
+          "count": 10000
+        },
+        "velocity_error_mm_s": {
+          "mean": 125.65108810103857,
+          "max": 125.66365446670166,
+          "p95": 125.66365446654751,
+          "std": 1.2565737112667654,
+          "count": 10000
+        },
+        "total_frames_simulated": 598,
+        "tracker_samples_delivered": 595
+      }
+    },
+    {
+      "name": "Figure-8 40mm 0.4Hz",
+      "results": {
+        "pipeline_latency_ms": {
+          "mean": 35.42446305083554,
+          "max": 49.56849537297492,
+          "p95": 44.684797958007394,
+          "std": 5.32563962630148,
+          "count": 715
+        },
+        "control_loop_latency_us": {
+          "mean": 16.120533293966826,
+          "max": 703.9000047370791,
+          "p95": 19.099999917671084,
+          "std": 12.953519753695373,
+          "count": 3000
+        },
+        "position_error_mm": {
+          "mean": 37.70393197837626,
+          "max": 50.06244970004006,
+          "p95": 49.903453953107764,
+          "std": 13.416865329609534,
+          "count": 12000
+        },
+        "velocity_error_mm_s": {
+          "mean": 151.25418910813303,
+          "max": 224.79326677188695,
+          "p95": 222.40508996708957,
+          "std": 49.96127233693825,
+          "count": 12000
+        },
+        "total_frames_simulated": 718,
+        "tracker_samples_delivered": 715
+      }
+    },
+    {
+      "name": "Sharp Corners 60mm",
+      "results": {
+        "pipeline_latency_ms": {
+          "mean": 35.40737031211648,
+          "max": 49.397361075902424,
+          "p95": 43.4157815738736,
+          "std": 4.785123874516527,
+          "count": 712
+        },
+        "control_loop_latency_us": {
+          "mean": 15.739333180439038,
+          "max": 194.10000095376745,
+          "p95": 19.20000067912042,
+          "std": 4.669787925260029,
+          "count": 3000
+        },
+        "position_error_mm": {
+          "mean": 51.20240973376907,
+          "max": 84.80863108367764,
+          "p95": 84.80863108367764,
+          "std": 31.218526197616377,
+          "count": 12000
+        },
+        "velocity_error_mm_s": {
+          "mean": 55.0,
+          "max": 60000.0,
+          "p95": 0.0,
+          "std": 1815.7574177185675,
+          "count": 12000
+        },
+        "total_frames_simulated": 718,
+        "tracker_samples_delivered": 712
+      }
+    },
+    {
+      "name": "Tracking Loss (1s dropout)",
+      "results": {
+        "pipeline_latency_ms": {
+          "mean": 35.286685817531925,
+          "max": 50.71991233183226,
+          "p95": 43.5170117103163,
+          "std": 5.187104332251474,
+          "count": 476
+        },
+        "control_loop_latency_us": {
+          "mean": 16.04049997695256,
+          "max": 232.89999808184803,
+          "p95": 20.899999071843922,
+          "std": 5.756054173967174,
+          "count": 2000
+        },
+        "position_error_mm": {
+          "mean": 31.84642330620334,
+          "max": 50.06252400912597,
+          "p95": 49.85515916924755,
+          "std": 15.388442800724853,
+          "count": 8000
+        },
+        "velocity_error_mm_s": {
+          "mean": 99.9803650782129,
+          "max": 157.0793742940566,
+          "p95": 156.57579201571536,
+          "std": 48.35119142465196,
+          "count": 8000
+        },
+        "total_frames_simulated": 479,
+        "tracker_samples_delivered": 476
+      }
+    },
+    {
+      "name": "Jitter Test (20Hz noise)",
+      "results": {
+        "pipeline_latency_ms": {
+          "mean": 35.84394065296087,
+          "max": 51.13994828287005,
+          "p95": 43.82645794501716,
+          "std": 5.1633588550778455,
+          "count": 473
+        },
+        "control_loop_latency_us": {
+          "mean": 23.717799951555207,
+          "max": 223.19999698083848,
+          "p95": 38.99999865097925,
+          "std": 10.692982866439653,
+          "count": 2000
+        },
+        "position_error_mm": {
+          "mean": 31.912279319753008,
+          "max": 54.97965622847235,
+          "p95": 52.69102347292048,
+          "std": 15.624066882431226,
+          "count": 8000
+        },
+        "velocity_error_mm_s": {
+          "mean": 405.84753070630813,
+          "max": 783.745542115895,
+          "p95": 736.7069150957661,
+          "std": 211.3775347048116,
+          "count": 8000
+        },
+        "total_frames_simulated": 478,
+        "tracker_samples_delivered": 473
+      }
+    }
+  ],
+  "assessment": {
+    "overall_score": 31.501102177362934,
+    "position_score": 0,
+    "velocity_score": 0,
+    "latency_score": 94.5033065320888,
+    "metrics": {
+      "avg_position_error_mm": 43.97889369997096,
+      "avg_position_p95_mm": 61.026447040115464,
+      "avg_velocity_error_mm_s": 150.62406056293315,
+      "avg_pipeline_latency_ms": 35.49669346791119
+    },
+    "verdict": "NEEDS WORK"
+  }
+}
