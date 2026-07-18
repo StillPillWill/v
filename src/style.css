@@ -444,6 +444,18 @@ input:checked + .toggle-slider:before {
   color: white;
 }
 
+.btn-warning {
+  background: rgba(255, 170, 0, 0.1);
+  color: #ffaa00;
+  border-color: rgba(255, 170, 0, 0.3);
+}
+.btn-warning:hover {
+  background: #ffaa00;
+  color: var(--bg-primary);
+  font-weight: 600;
+  box-shadow: 0 0 12px #ffaa00;
+}
+
 .btn-success {
   background: var(--accent-positive);
   color: var(--bg-primary);
