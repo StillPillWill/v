@@ -67,6 +67,7 @@
             <div class="tab-selectors">
               <button class="tab-btn active" data-tab="kinematic">Manual Control</button>
               <button class="tab-btn" data-tab="planner">Path Planner</button>
+              <button class="tab-btn" data-tab="plotter">Image Plotter</button>
             </div>
           </div>
 
@@ -131,6 +132,51 @@
                 </div>
                 <input type="range" id="path-speed" min="0.1" max="2.0" value="1.0" step="0.1" class="neon-slider" />
               </div>
+            </div>
+          </div>
+
+          <!-- Tab Content: Image Plotter -->
+          <div class="tab-content" id="tab-plotter">
+            <div class="card">
+              <h3>Image Plotter</h3>
+              <p class="card-desc">Upload or capture an image. It will be converted to marker-friendly scanlines and plotted to the work area.</p>
+
+              <!-- Drop Zone -->
+              <div id="plotter-dropzone" style="border: 2px dashed var(--border-color); border-radius: 10px; padding: 24px 16px; text-align: center; cursor: pointer; transition: border-color 0.2s; margin-bottom: 12px; position: relative;">
+                <div style="font-size: 2rem; margin-bottom: 8px;">🖼️</div>
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 0;">Drag &amp; drop an image here, or</p>
+                <div style="display: flex; gap: 8px; justify-content: center; margin-top: 10px;">
+                  <button class="btn btn-secondary" id="btn-plotter-file" style="font-size: 0.8rem; padding: 4px 12px;">Browse File</button>
+                  <button class="btn btn-secondary" id="btn-plotter-camera" style="font-size: 0.8rem; padding: 4px 12px;">📷 Capture</button>
+                </div>
+                <input type="file" id="plotter-file-input" accept="image/*" style="display:none;" />
+              </div>
+
+              <!-- Hidden Camera Capture -->
+              <div id="plotter-camera-area" style="display:none; margin-bottom: 12px;">
+                <video id="plotter-cam-video" autoplay playsinline muted style="width:100%; border-radius:8px; border: 1px solid var(--border-color);"></video>
+                <button class="btn btn-primary" id="btn-plotter-snap" style="width:100%; margin-top:8px;">📸 Snap Photo</button>
+              </div>
+
+              <!-- Preview Canvas -->
+              <canvas id="plotter-preview" style="width: 100%; border-radius: 8px; border: 1px solid var(--border-color); display: none; background: #000; margin-bottom: 12px;"></canvas>
+
+              <!-- Controls -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <label style="color: var(--text-muted); font-size: 0.8rem;">Scan Lines</label>
+                  <input type="number" id="plotter-lines" value="40" min="10" max="120" step="5" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <label style="color: var(--text-muted); font-size: 0.8rem;">Threshold (0-255)</label>
+                  <input type="number" id="plotter-threshold" value="128" min="40" max="220" step="5" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
+                </div>
+              </div>
+
+              <div id="plotter-status" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px; min-height: 18px;"></div>
+
+              <button class="btn btn-primary" id="btn-plotter-process" style="width: 100%; margin-bottom: 8px;" disabled>Process Image</button>
+              <button class="btn btn-success" id="btn-plotter-plot" style="width: 100%;" disabled>▶ Start Plotting</button>
             </div>
           </div>
         </aside>

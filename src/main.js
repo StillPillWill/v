@@ -1,5 +1,6 @@
 import { HandTrackingProcessor } from './handTracker.js';
 import { Vec3, AlphaBetaEstimator, MotionShaper } from './webSerialController.js';
+import { ImagePlotter } from './plotter.js';
 
 // --- Telemetry and Control State ---
 let controlMode = 'kinematic'; // 'kinematic', 'planner'
@@ -81,7 +82,21 @@ const dom = {
   penDownZSlider: document.getElementById('pen-down-z'),
   penUpZSlider: document.getElementById('pen-up-z'),
   workspaceWidthInput: document.getElementById('workspace-width'),
-  workspaceHeightInput: document.getElementById('workspace-height')
+  workspaceHeightInput: document.getElementById('workspace-height'),
+  // Plotter
+  plotterDropzone:   document.getElementById('plotter-dropzone'),
+  plotterFileInput:  document.getElementById('plotter-file-input'),
+  plotterBtnFile:    document.getElementById('btn-plotter-file'),
+  plotterBtnCamera:  document.getElementById('btn-plotter-camera'),
+  plotterCameraArea: document.getElementById('plotter-camera-area'),
+  plotterCamVideo:   document.getElementById('plotter-cam-video'),
+  plotterBtnSnap:    document.getElementById('btn-plotter-snap'),
+  plotterPreview:    document.getElementById('plotter-preview'),
+  plotterLines:      document.getElementById('plotter-lines'),
+  plotterThreshold:  document.getElementById('plotter-threshold'),
+  plotterStatus:     document.getElementById('plotter-status'),
+  plotterBtnProcess: document.getElementById('btn-plotter-process'),
+  plotterBtnPlot:    document.getElementById('btn-plotter-plot')
 };
 
 // --- WebSocket Management ---
@@ -744,6 +759,186 @@ function update(time) {
 
 // --- Initialize App ---
 initEvents();
+initPlotter();
 connectWebSocket();
 requestAnimationFrame(update);
 console.log("Nexus-4 Printer Controller Initialized.");
+
+// ─── Image Plotter UI ────────────────────────────────────────────────────────
+
+const imagePlotter = new ImagePlotter();
+let plotterCamStream = null;
+let plottingActive  = false;
+let plotCancelled   = false;
+
+function initPlotter() {
+  const d = dom;
+  imagePlotter.previewCanvas = d.plotterPreview;
+
+  // ── Drag & drop ─────────────────────────────────────────────────────────
+  d.plotterDropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    d.plotterDropzone.style.borderColor = '#00e6ff';
+  });
+  d.plotterDropzone.addEventListener('dragleave', () => {
+    d.plotterDropzone.style.borderColor = '';
+  });
+  d.plotterDropzone.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    d.plotterDropzone.style.borderColor = '';
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      await _plotterLoadFile(file);
+    }
+  });
+
+  // ── File picker ──────────────────────────────────────────────────────────
+  d.plotterBtnFile.addEventListener('click', () => d.plotterFileInput.click());
+  d.plotterFileInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (file) await _plotterLoadFile(file);
+  });
+
+  // ── Camera capture ───────────────────────────────────────────────────────
+  d.plotterBtnCamera.addEventListener('click', async () => {
+    if (plotterCamStream) {
+      // Already open — toggle close
+      _stopPlotterCamera();
+      return;
+    }
+    setPlotterStatus('Starting camera…');
+    try {
+      plotterCamStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      d.plotterCamVideo.srcObject = plotterCamStream;
+      d.plotterCameraArea.style.display = 'block';
+      d.plotterBtnCamera.textContent = '❌ Close Camera';
+      setPlotterStatus('Camera ready — frame the subject, then snap.');
+    } catch (err) {
+      setPlotterStatus('Camera error: ' + err.message);
+    }
+  });
+
+  d.plotterBtnSnap.addEventListener('click', async () => {
+    if (!plotterCamStream) return;
+    setPlotterStatus('Capturing photo…');
+    await imagePlotter.loadFromVideo(d.plotterCamVideo);
+    _stopPlotterCamera();
+    _plotterImageReady();
+  });
+
+  // ── Process ──────────────────────────────────────────────────────────────
+  d.plotterBtnProcess.addEventListener('click', () => {
+    _plotterRunProcess();
+  });
+
+  // Re-process live when sliders change
+  d.plotterLines.addEventListener('change',     () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+  d.plotterThreshold.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+
+  // ── Plot ─────────────────────────────────────────────────────────────────
+  d.plotterBtnPlot.addEventListener('click', async () => {
+    if (plottingActive) {
+      // Cancel
+      plotCancelled = true;
+      d.plotterBtnPlot.textContent = '▶ Start Plotting';
+      d.plotterBtnPlot.classList.remove('btn-danger');
+      d.plotterBtnPlot.classList.add('btn-success');
+      plottingActive = false;
+      setPlotterStatus('Plotting cancelled.');
+      return;
+    }
+    if (!imagePlotter.waypoints.length) {
+      setPlotterStatus('Process the image first.');
+      return;
+    }
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      setPlotterStatus('⚠ WebSocket not connected.');
+      return;
+    }
+    plottingActive = true;
+    plotCancelled  = false;
+    d.plotterBtnPlot.textContent = '⏹ Cancel Plot';
+    d.plotterBtnPlot.classList.remove('btn-success');
+    d.plotterBtnPlot.classList.add('btn-danger');
+    setPlotterStatus('Plotting…');
+
+    await imagePlotter.streamToPlotter(
+      socket,
+      /* feedrateXY */ 6000,
+      /* feedrateZ  */ 1000,
+      (cur, tot) => setPlotterStatus(`Plotting… ${cur}/${tot} moves (${Math.round(cur/tot*100)}%)`),
+      () => plotCancelled
+    );
+
+    plottingActive = false;
+    plotCancelled  = false;
+    d.plotterBtnPlot.textContent = '▶ Start Plotting';
+    d.plotterBtnPlot.classList.remove('btn-danger');
+    d.plotterBtnPlot.classList.add('btn-success');
+    setPlotterStatus('✅ Plotting complete!');
+  });
+}
+
+function _stopPlotterCamera() {
+  if (plotterCamStream) {
+    plotterCamStream.getTracks().forEach(t => t.stop());
+    plotterCamStream = null;
+  }
+  dom.plotterCameraArea.style.display = 'none';
+  dom.plotterBtnCamera.textContent = '📷 Capture';
+}
+
+async function _plotterLoadFile(file) {
+  setPlotterStatus('Loading image…');
+  try {
+    await imagePlotter.loadFromFile(file);
+    _plotterImageReady();
+  } catch (e) {
+    setPlotterStatus('Failed to load image: ' + e.message);
+  }
+}
+
+function _plotterImageReady() {
+  setPlotterStatus('Image loaded. Press "Process Image" to preview.');
+  dom.plotterBtnProcess.disabled = false;
+  dom.plotterBtnPlot.disabled    = true;
+  // Auto-process with current settings
+  _plotterRunProcess();
+}
+
+function _plotterRunProcess() {
+  setPlotterStatus('Processing…');
+  try {
+    const numLines  = parseInt(dom.plotterLines.value, 10)    || 40;
+    const threshold = parseInt(dom.plotterThreshold.value, 10) || 128;
+
+    // Grab current workspace dimensions from inputs (fall back to handProcessor fields)
+    const wW = parseFloat(dom.workspaceWidthInput?.value)  || handProcessor.workspaceWidth  || 200;
+    const wH = parseFloat(dom.workspaceHeightInput?.value) || handProcessor.workspaceHeight || 200;
+
+    const workspace = {
+      centerX: handProcessor.centerX,
+      centerY: handProcessor.centerY,
+      workspaceWidth:  wW,
+      workspaceHeight: wH
+    };
+
+    const count = imagePlotter.process(
+      numLines, threshold, workspace, penDownZ, penUpZ
+    );
+
+    // Show preview
+    dom.plotterPreview.style.display = 'block';
+    dom.plotterBtnPlot.disabled = false;
+    setPlotterStatus(`Ready — ${count} moves, ~${Math.round(count / 5)} path segments. Hit "Start Plotting".`);
+  } catch (e) {
+    setPlotterStatus('Processing error: ' + e.message);
+    console.error(e);
+  }
+}
+
+function setPlotterStatus(msg) {
+  if (dom.plotterStatus) dom.plotterStatus.textContent = msg;
+}
