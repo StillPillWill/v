@@ -39,6 +39,9 @@ let webcamActive = false;
 let mediaPipeCamera = null;
 let mediaPipeHands = null;
 let fistClosed = false;
+let fistConfidence = 0.0;
+let penDownZ = 0.0;
+let penUpZ = 15.0;
 const handProcessor = new HandTrackingProcessor();
 let lastTrackedTime = 0;
 
@@ -74,7 +77,11 @@ const dom = {
   webcamOverlay: document.getElementById('webcam-overlay'),
   trackingStatusText: document.getElementById('tracking-status-text'),
   trackingStatusBadge: document.getElementById('tracking-status-badge'),
-  gripStatus: document.getElementById('grip-status')
+  gripStatus: document.getElementById('grip-status'),
+  penDownZSlider: document.getElementById('pen-down-z'),
+  penDownValText: document.getElementById('pen-down-val'),
+  penUpZSlider: document.getElementById('pen-up-z'),
+  penUpValText: document.getElementById('pen-up-val')
 };
 
 // --- WebSocket Management ---
@@ -223,6 +230,16 @@ function initEvents() {
     }
   });
 
+  // Pen Height calibration sliders
+  dom.penDownZSlider.addEventListener('input', (e) => {
+    penDownZ = parseFloat(e.target.value);
+    dom.penDownValText.textContent = penDownZ.toFixed(1);
+  });
+
+  dom.penUpZSlider.addEventListener('input', (e) => {
+    penUpZ = parseFloat(e.target.value);
+    dom.penUpValText.textContent = penUpZ.toFixed(1);
+  });
 }
 
 function updateCartesianTexts() {
@@ -424,7 +441,17 @@ function onHandResults(results) {
     dom.trackingStatusBadge.className = 'status-badge online';
 
     const landmarks = results.multiHandLandmarks[0];
-    fistClosed = checkFistClosed(landmarks);
+    const instantFist = checkFistClosed(landmarks);
+
+    // Apply fist hysteresis confidence filter to prevent single-frame drops
+    if (instantFist) {
+      // Rapid charge (takes ~2 frames to register fist)
+      fistConfidence = Math.min(1.0, fistConfidence + 0.5);
+    } else {
+      // Slower decay (takes ~12 frames to release pen, bridging tracking drops!)
+      fistConfidence = Math.max(0.0, fistConfidence - 0.08);
+    }
+    fistClosed = (fistConfidence > 0.4);
 
     if (fistClosed) {
       dom.gripStatus.textContent = 'CLOSED (PEN DOWN)';
@@ -446,7 +473,7 @@ function onHandResults(results) {
     if (targets) {
       webcamTargetX = targets.x;
       webcamTargetY = targets.y;
-      webcamTargetZ = fistClosed ? 0.0 : 15.0; // Force Pen Down/Up heights
+      webcamTargetZ = fistClosed ? penDownZ : penUpZ; // Use adjustable calibrated heights!
     }
   } else {
     dom.trackingStatusText.textContent = 'LOST';
@@ -455,13 +482,24 @@ function onHandResults(results) {
     dom.trackingStatusBadge.className = 'status-badge offline';
     
     handProcessor.isTracking = false;
-    fistClosed = false;
+    
+    // Slower decay on tracking lost to bridge short drops
+    fistConfidence = Math.max(0.0, fistConfidence - 0.05);
+    fistClosed = (fistConfidence > 0.4);
 
-    dom.gripStatus.textContent = 'OPEN (PEN UP)';
-    dom.gripStatus.className = 'status-badge offline';
-    dom.gripStatus.style.background = 'rgba(139, 148, 158, 0.15)';
-    dom.gripStatus.style.color = '#8b949e';
-    dom.gripStatus.style.borderColor = 'rgba(139, 148, 158, 0.3)';
+    if (fistClosed) {
+      dom.gripStatus.textContent = 'CLOSED (PEN DOWN)';
+      dom.gripStatus.className = 'status-badge';
+      dom.gripStatus.style.background = 'rgba(255, 170, 0, 0.15)';
+      dom.gripStatus.style.color = '#ffaa00';
+      dom.gripStatus.style.borderColor = 'rgba(255, 170, 0, 0.3)';
+    } else {
+      dom.gripStatus.textContent = 'OPEN (PEN UP)';
+      dom.gripStatus.className = 'status-badge offline';
+      dom.gripStatus.style.background = 'rgba(139, 148, 158, 0.15)';
+      dom.gripStatus.style.color = '#8b949e';
+      dom.gripStatus.style.borderColor = 'rgba(139, 148, 158, 0.3)';
+    }
   }
 }
 
@@ -631,7 +669,7 @@ function update(time) {
 
     // Limit movement G-code frequency to 50Hz (20ms interval) to keep queue clean
     if (dist > 0.05 && (nowMs - lastSentTime > 20)) {
-      socket.send(`gcode:G1 X${targetX.toFixed(1)} Y${targetY.toFixed(1)} Z${targetZ.toFixed(1)} F6000`);
+      socket.send(`gcode:G1 X${targetX.toFixed(1)} Y${targetY.toFixed(1)} Z${targetZ.toFixed(1)} F12000`);
       
       lastSentX = targetX;
       lastSentY = targetY;

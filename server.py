@@ -272,14 +272,21 @@ def try_connect_printer():
             threading.Thread(target=printer_reader_thread, daemon=True).start()
             threading.Thread(target=printer_writer_thread, daemon=True).start()
             
-            # Startup G-code instructions
+            # Startup G-code instructions (boost acceleration and speeds)
             try:
                 serial_port.write(b"M999\n") # Reset errors
                 time.sleep(0.1)
                 serial_port.write(b"G90\n")  # Absolute mode
                 time.sleep(0.1)
+                # Boost physical acceleration and feedrate limits
+                serial_port.write(b"M201 X3000 Y3000 Z500\n")
+                time.sleep(0.1)
+                serial_port.write(b"M203 X300 Y300 Z30\n")
+                time.sleep(0.1)
+                serial_port.write(b"M204 P3000 T3000\n")
+                time.sleep(0.1)
                 serial_port.write(b"G28\n")  # Home
-                print(f"[SERIAL] Connected successfully and sent G28 homing to {printer_port_name}.")
+                print(f"[SERIAL] Connected successfully, boosted acceleration, and sent G28 homing to {printer_port_name}.")
             except Exception as ex:
                 print(f"[SERIAL ERROR] Failed to send initialization gcode: {ex}")
             return True
