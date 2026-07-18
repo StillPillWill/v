@@ -69,57 +69,40 @@ export class HandTrackingProcessor {
 
     this.isTracking = true;
 
-    // Landmark 0: Wrist
-    // Landmark 9: Middle Finger MCP (center of palm)
-    const wrist = landmarks[0];
-    const palmCenter = landmarks[9];
+    // Calculate geometric hand center by averaging key palm landmarks
+    const centerIndices = [0, 5, 9, 13, 17];
+    let sumX = 0;
+    let sumY = 0;
+    centerIndices.forEach(idx => {
+      sumX += landmarks[idx].x;
+      sumY += landmarks[idx].y;
+    });
+    const handCenterX = sumX / centerIndices.length;
+    const handCenterY = sumY / centerIndices.length;
 
-    // --- 1. Compute Hand Scale for depth/distance tracking ---
-    // Use the 2D palm width (distance between index knuckle 5 and pinky knuckle 17).
-    // This is structurally independent of wrist pitch/tilt.
-    const indexKnuckle = landmarks[5];
-    const pinkyKnuckle = landmarks[17];
-    const dScaleX = pinkyKnuckle.x - indexKnuckle.x;
-    const dScaleY = pinkyKnuckle.y - indexKnuckle.y;
-    const handScale = Math.sqrt(dScaleX * dScaleX + dScaleY * dScaleY);
+    // --- Map coordinates directly from video frame ---
+    // User's Left/Right hand movement in frame -> Printer X [192, 392] mm
+    const rawTargetX = 192.0 + (1.0 - handCenterX) * 200.0;
 
-    // --- 2. Absolute Hand Scale mapping (not relative to rolling windows) ---
-    // Expects normalized palm width to span from 0.05 (far from camera) to 0.16 (close to camera).
-    // This provides a stable, non-drifting absolute reach coordinate.
-    const minS = 0.05;
-    const maxS = 0.16;
-    const normalizedScale = Math.max(0, Math.min(1, (handScale - minS) / (maxS - minS)));
+    // User's Up/Down hand movement in frame -> Printer Y [287, 487] mm
+    const rawTargetY = 287.0 + (1.0 - handCenterY) * 200.0;
 
-    // --- 3. Map coordinates to Printer Bed Workspace ---
-    // User's Left/Right hand movement -> Printer X [0, 585] mm
-    // Mirrored palmCenter.x represents user's left/right position
-    const rawTargetX = (1.0 - palmCenter.x) * 585;
+    // Dummy Z (actual Z is driven by fistClosed binary check in main.js)
+    const rawTargetZ = 15.0;
 
-    // User's hand depth (distance from camera) -> Printer Y [0, 775] mm
-    // Far (normalizedScale near 0) -> Printer far (775)
-    // Close (normalizedScale near 1) -> Printer close (0)
-    const rawTargetY = (1.0 - normalizedScale) * 775;
+    // Dummy Pitch
+    const rawPitchDeg = 0.0;
 
-    // User's vertical hand height -> Printer Z [0, 50] mm
-    const rawTargetZ = (1.0 - palmCenter.y) * 50;
-
-    // --- 4. Compute Wrist Tilt angle (unused for printer, kept for API compatibility) ---
-    // Vector from Wrist (0) to Palm Center (9)
-    const rawPitchRad = Math.atan2(-(palmCenter.y - wrist.y), palmCenter.x - wrist.x);
-    let rawPitchDeg = (rawPitchRad * 180) / Math.PI - 90;
-    if (rawPitchDeg < -180) rawPitchDeg += 360;
-    rawPitchDeg = Math.max(-80, Math.min(80, rawPitchDeg));
-
-    // --- 5. Apply One Euro Filter to remove noise ---
+    // --- Apply One Euro Filter to remove noise ---
     const smoothX = this.filterX.filter(rawTargetX, dt);
     const smoothY = this.filterY.filter(rawTargetY, dt);
     const smoothZ = this.filterZ.filter(rawTargetZ, dt);
     const smoothPitch = this.filterPitch.filter(rawPitchDeg, dt);
 
-    // Save final safe values
+    // Save final safe values centered/clamped in the 200x200mm area
     this.lastValidTargets = {
-      x: Math.max(0, Math.min(585, smoothX)),
-      y: Math.max(0, Math.min(775, smoothY)),
+      x: Math.max(192, Math.min(392, smoothX)),
+      y: Math.max(287, Math.min(487, smoothY)),
       z: Math.max(0, Math.min(50, smoothZ)),
       pitch: Math.max(-80, Math.min(80, smoothPitch))
     };

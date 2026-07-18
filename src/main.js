@@ -29,23 +29,9 @@ let apiConnected = false;
 let printerConnected = false;
 let printerPortName = "";
 
-// --- Motion Smoothing (AlphaBeta + Shaper) ---
-const bedX = 585.0;
-const bedY = 775.0;
-const estimator = new AlphaBetaEstimator();
-const shaper = new MotionShaper(
-  200.0,  // MAX_VEL_MM_S
-  1500.0, // MAX_ACC_MM_S2
-  new Vec3(bedX / 2, bedY / 2, 15.0),
-  new Vec3(0, 0, 0),
-  new Vec3(bedX, bedY, 100.0)
-);
-
 let lastSentX = null;
 let lastSentY = null;
 let lastSentZ = null;
-let lastSentPen = 1.0; // 1.0 = Pen Up (Default)
-let targetPen = 1.0;
 let lastSentTime = 0;
 
 // --- MediaPipe Webcam Tracking ---
@@ -446,14 +432,12 @@ function onHandResults(results) {
       dom.gripStatus.style.background = 'rgba(255, 170, 0, 0.15)';
       dom.gripStatus.style.color = '#ffaa00';
       dom.gripStatus.style.borderColor = 'rgba(255, 170, 0, 0.3)';
-      targetPen = 0.0;
     } else {
       dom.gripStatus.textContent = 'OPEN (PEN UP)';
       dom.gripStatus.className = 'status-badge offline';
       dom.gripStatus.style.background = 'rgba(139, 148, 158, 0.15)';
       dom.gripStatus.style.color = '#8b949e';
       dom.gripStatus.style.borderColor = 'rgba(139, 148, 158, 0.3)';
-      targetPen = 1.0;
     }
 
     drawHandSkeleton(ctx, landmarks);
@@ -472,7 +456,6 @@ function onHandResults(results) {
     
     handProcessor.isTracking = false;
     fistClosed = false;
-    targetPen = 1.0;
 
     dom.gripStatus.textContent = 'OPEN (PEN UP)';
     dom.gripStatus.className = 'status-badge offline';
@@ -592,7 +575,7 @@ function update(time) {
     
     targetX += (webcamTargetX - targetX) * (1 - Math.exp(-k_pos * dt));
     targetY += (webcamTargetY - targetY) * (1 - Math.exp(-k_pos * dt));
-    targetZ += (webcamTargetZ - targetZ) * (1 - Math.exp(-k_pos * dt));
+    targetZ = webcamTargetZ; // Instantly go to Pen Down/Up heights
     
     updateCartesianTexts();
     
@@ -631,38 +614,28 @@ function update(time) {
     telemetryStatus.style.borderColor = 'rgba(16, 185, 129, 0.3)';
   }
 
-  // 3. Motion Interpolation & Dynamic G-code streaming
+  // 3. Dynamic G-code streaming
   if (apiConnected && printerConnected) {
-    const nowSec = performance.now() / 1000.0;
-    
-    // Feed estimator & shaper
-    estimator.update(new Vec3(targetX, targetY, targetZ), nowSec);
-    const estimated = estimator.predict(nowSec);
-    const safePos = shaper.step(estimated, dt);
-
     if (lastSentX === null || lastSentY === null || lastSentZ === null) {
-      lastSentX = safePos.x;
-      lastSentY = safePos.y;
-      lastSentZ = safePos.z;
+      lastSentX = targetX;
+      lastSentY = targetY;
+      lastSentZ = targetZ;
     }
 
-    const dx = safePos.x - lastSentX;
-    const dy = safePos.y - lastSentY;
-    const dz = safePos.z - lastSentZ;
+    const dx = targetX - lastSentX;
+    const dy = targetY - lastSentY;
+    const dz = targetZ - lastSentZ;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     
     const nowMs = performance.now();
 
     // Limit movement G-code frequency to 50Hz (20ms interval) to keep queue clean
     if (dist > 0.05 && (nowMs - lastSentTime > 20)) {
-      const vNorm = shaper.vel.norm();
-      const feedrate = Math.floor(Math.min(99999, Math.max(1000, vNorm * 60)));
+      socket.send(`gcode:G1 X${targetX.toFixed(1)} Y${targetY.toFixed(1)} Z${targetZ.toFixed(1)} F6000`);
       
-      socket.send(`gcode:G1 X${safePos.x.toFixed(1)} Y${safePos.y.toFixed(1)} Z${safePos.z.toFixed(1)} F${feedrate}`);
-      
-      lastSentX = safePos.x;
-      lastSentY = safePos.y;
-      lastSentZ = safePos.z;
+      lastSentX = targetX;
+      lastSentY = targetY;
+      lastSentZ = targetZ;
       lastSentTime = nowMs;
     }
   }
