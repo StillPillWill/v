@@ -90,19 +90,20 @@ export class HandTrackingProcessor {
     const maxS = 0.16;
     const normalizedScale = Math.max(0, Math.min(1, (handScale - minS) / (maxS - minS)));
 
-    // --- 3. Map coordinates to Robot Workspace ---
-    // Horizontal: Map Palm X [0, 1] to Robot Y [-250, 250] mm
-    const rawTargetY = (0.5 - palmCenter.x) * 550;
+    // --- 3. Map coordinates to Printer Bed Workspace ---
+    // User's Left/Right hand movement -> Printer X [0, 585] mm
+    // Mirrored palmCenter.x represents user's left/right position
+    const rawTargetX = (1.0 - palmCenter.x) * 585;
 
-    // Vertical: Map Palm Y [0, 1] to Robot Z [-30, 320] mm
-    const rawTargetZ = (1.0 - palmCenter.y) * 350 - 30;
+    // User's hand depth (distance from camera) -> Printer Y [0, 775] mm
+    // Far (normalizedScale near 0) -> Printer far (775)
+    // Close (normalizedScale near 1) -> Printer close (0)
+    const rawTargetY = (1.0 - normalizedScale) * 775;
 
-    // Depth: Map normalized scale to Robot X [80, 310] mm
-    // Small scale (far) -> extended (high Target X)
-    // Large scale (close) -> folded (low Target X)
-    const rawTargetX = 80 + (1.0 - normalizedScale) * 230;
+    // User's vertical hand height -> Printer Z [0, 50] mm
+    const rawTargetZ = (1.0 - palmCenter.y) * 50;
 
-    // --- 4. Compute Wrist Tilt angle ---
+    // --- 4. Compute Wrist Tilt angle (unused for printer, kept for API compatibility) ---
     // Vector from Wrist (0) to Palm Center (9)
     const rawPitchRad = Math.atan2(-(palmCenter.y - wrist.y), palmCenter.x - wrist.x);
     let rawPitchDeg = (rawPitchRad * 180) / Math.PI - 90;
@@ -117,9 +118,9 @@ export class HandTrackingProcessor {
 
     // Save final safe values
     this.lastValidTargets = {
-      x: Math.max(60, Math.min(320, smoothX)),
-      y: Math.max(-300, Math.min(300, smoothY)),
-      z: Math.max(-50, Math.min(350, smoothZ)),
+      x: Math.max(0, Math.min(585, smoothX)),
+      y: Math.max(0, Math.min(775, smoothY)),
+      z: Math.max(0, Math.min(50, smoothZ)),
       pitch: Math.max(-80, Math.min(80, smoothPitch))
     };
 

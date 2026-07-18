@@ -32,11 +32,11 @@
       <header class="app-header">
         <div class="logo-area">
           <div class="status-indicator active"></div>
-          <h1>NEXUS-4 <span class="subtitle">Dynamic Robot Arm Simulator</span></h1>
+          <h1>NEXUS-4 <span class="subtitle">Advanced 3D Printer & Plotter Controller</span></h1>
         </div>
         <div class="telemetry-bar">
           <div class="tel-item">
-            <span class="label">End Effector X:</span>
+            <span class="label">Printer X:</span>
             <span class="value mono" id="telemetry-x">0.00</span>
           </div>
           <div class="tel-item">
@@ -63,146 +63,42 @@
         <!-- Control Sidebar -->
         <aside class="control-sidebar">
           
-          <!-- Webcam Hand Tracker Card -->
-          <div class="card webcam-card">
-            <div class="webcam-header">
-              <h3>Webcam Hand Tracker</h3>
-              <label class="switch">
-                <input type="checkbox" id="toggle-webcam" />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <p class="card-desc">Move hand to control Base (yaw), extension (depth), and Wrist (tilt)</p>
-            <div class="webcam-viewport">
-              <video id="webcam-video" autoplay playsinline muted></video>
-              <canvas id="webcam-overlay"></canvas>
-              <div id="tracking-status-text" class="tracking-status lost">TRACKING OFF</div>
-            </div>
-            <div class="webcam-calib-info" style="display: flex; flex-direction: column; gap: 8px;">
-              <div class="toggle-container" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                <label for="require-eye-contact" style="font-size: 0.8rem; color: var(--text-main); font-weight: 500;">Require Eye Contact</label>
-                <input type="checkbox" id="require-eye-contact" class="neon-checkbox" />
-              </div>
-              <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                <span style="font-size: 0.75rem; color: var(--text-muted);">Gaze Tracker:</span>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                  <button id="btn-calibrate-gaze" style="padding: 2px 6px; font-size: 0.7rem; border-radius: 4px; border: 1px solid var(--primary-color); background: rgba(0, 240, 255, 0.1); color: var(--primary-color); cursor: pointer; transition: all 0.2s;">Calibrate Gaze</button>
-                  <span id="eye-contact-status" class="status-badge offline">NO CONTACT</span>
-                </div>
-              </div>
-              <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                <span style="font-size: 0.75rem; color: var(--text-muted);">Grip State:</span>
-                <span id="grip-status" class="status-badge offline" style="background: rgba(139, 148, 158, 0.15); color: #8b949e; border-color: rgba(139, 148, 158, 0.3);">OPEN</span>
-              </div>
-            </div>
-          </div>
-
           <!-- Control Mode Tabs -->
           <div class="card tabs-card">
             <div class="tab-selectors">
-              <button class="tab-btn active" data-tab="manual">Manual (Joint)</button>
-              <button class="tab-btn" data-tab="kinematic">Kinematic (Cartesian)</button>
+              <button class="tab-btn active" data-tab="kinematic">Manual Control</button>
               <button class="tab-btn" data-tab="planner">Path Planner</button>
             </div>
           </div>
 
-          <!-- Tab Content: Manual Joint Control -->
-          <div class="tab-content active" id="tab-manual">
+          <!-- Tab Content: Cartesian Control -->
+          <div class="tab-content active" id="tab-kinematic">
             <div class="card">
-              <h3>Joint Angle Targets</h3>
-              <p class="card-desc">Direct control of joint angles (Forward Kinematics)</p>
-              
+              <h3>Printer Axis Coordinates</h3>
+              <p class="card-desc">Direct control of X, Y, and Z printer axes</p>
+
               <div class="control-group">
                 <div class="slider-header">
-                  <label for="joint1">Joint 1: Base (Yaw)</label>
-                  <span class="value mono"><span id="j1-val">0</span>°</span>
+                  <label for="target-x">Target X (Left/Right)</label>
+                  <span class="value mono"><span id="tx-val">292</span> mm</span>
                 </div>
-                <input type="range" id="joint1" min="-180" max="180" value="0" step="1" class="neon-slider" />
-                <div class="joint-telemetry">
-                  <span>Actual: <span id="j1-actual" class="mono">0</span>°</span>
-                  <span>Error: <span id="j1-error" class="mono">0.0</span>°</span>
-                </div>
+                <input type="range" id="target-x" min="0" max="585" value="292" step="1" class="neon-slider" />
               </div>
 
               <div class="control-group">
                 <div class="slider-header">
-                  <label for="joint2">Joint 2: Shoulder (Pitch)</label>
-                  <span class="value mono"><span id="j2-val">30</span>°</span>
+                  <label for="target-y">Target Y (Forward/Backward)</label>
+                  <span class="value mono"><span id="ty-val">387</span> mm</span>
                 </div>
-                <input type="range" id="joint2" min="-90" max="120" value="30" step="1" class="neon-slider" />
-                <div class="joint-telemetry">
-                  <span>Actual: <span id="j2-actual" class="mono">30</span>°</span>
-                  <span>Error: <span id="j2-error" class="mono">0.0</span>°</span>
-                </div>
+                <input type="range" id="target-y" min="0" max="775" value="387" step="1" class="neon-slider" />
               </div>
 
               <div class="control-group">
                 <div class="slider-header">
-                  <label for="joint3">Joint 3: Elbow (Pitch)</label>
-                  <span class="value mono"><span id="j3-val">60</span>°</span>
+                  <label for="target-z">Target Z (Pen Height)</label>
+                  <span class="value mono"><span id="tz-val">15</span> mm</span>
                 </div>
-                <input type="range" id="joint3" min="-150" max="150" value="60" step="1" class="neon-slider" />
-                <div class="joint-telemetry">
-                  <span>Actual: <span id="j3-actual" class="mono">60</span>°</span>
-                  <span>Error: <span id="j3-error" class="mono">0.0</span>°</span>
-                </div>
-              </div>
-
-              <div class="control-group">
-                <div class="slider-header">
-                  <label for="joint4">Joint 4: Wrist (Pitch)</label>
-                  <span class="value mono"><span id="j4-val">-10</span>°</span>
-                </div>
-                <input type="range" id="joint4" min="-120" max="120" value="-10" step="1" class="neon-slider" />
-                <div class="joint-telemetry">
-                  <span>Actual: <span id="j4-actual" class="mono">-10</span>°</span>
-                  <span>Error: <span id="j4-error" class="mono">0.0</span>°</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Tab Content: Kinematic Cartesian Control -->
-          <div class="tab-content" id="tab-kinematic">
-            <div class="card">
-              <h3>Cartesian Target</h3>
-              <p class="card-desc">Control end-effector coordinates (Inverse Kinematics)</p>
-
-              <div class="control-group">
-                <div class="slider-header">
-                  <label for="target-x">Target X (Forward/Backward)</label>
-                  <span class="value mono"><span id="tx-val">120</span> mm</span>
-                </div>
-                <input type="range" id="target-x" min="-350" max="350" value="120" step="2" class="neon-slider" />
-              </div>
-
-              <div class="control-group">
-                <div class="slider-header">
-                  <label for="target-y">Target Y (Left/Right)</label>
-                  <span class="value mono"><span id="ty-val">0</span> mm</span>
-                </div>
-                <input type="range" id="target-y" min="-350" max="350" value="0" step="2" class="neon-slider" />
-              </div>
-
-              <div class="control-group">
-                <div class="slider-header">
-                  <label for="target-z">Target Z (Up/Down)</label>
-                  <span class="value mono"><span id="tz-val">150</span> mm</span>
-                </div>
-                <input type="range" id="target-z" min="-50" max="400" value="150" step="2" class="neon-slider" />
-              </div>
-
-              <div class="control-group">
-                <div class="slider-header">
-                  <label for="target-pitch">Wrist Orientation (Pitch Angle \(\phi\))</label>
-                  <span class="value mono"><span id="tpitch-val">0</span>°</span>
-                </div>
-                <input type="range" id="target-pitch" min="-90" max="90" value="0" step="1" class="neon-slider" />
-              </div>
-
-              <div class="ik-info-box" id="ik-status-box">
-                <div class="info-label">IK Status:</div>
-                <div class="info-value positive" id="ik-status-text">VALID SOLUTION</div>
+                <input type="range" id="target-z" min="0" max="100" value="15" step="1" class="neon-slider" />
               </div>
             </div>
           </div>
@@ -236,143 +132,49 @@
                 </div>
                 <input type="range" id="path-speed" min="0.1" max="2.0" value="1.0" step="0.1" class="neon-slider" />
               </div>
-
-              <div class="control-group">
-                <label for="path-mode">Interpolation Mode</label>
-                <select id="path-mode" class="neon-select">
-                  <option value="joint">Joint Space (Smooth curves)</option>
-                  <option value="linear">Cartesian Space (Straight lines)</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <!-- Controller Configuration Panel -->
-          <div class="card pid-card">
-            <div class="accordion-header" id="pid-accordion">
-              <h3>Controller Tuning & Setup</h3>
-              <span class="arrow">▼</span>
-            </div>
-            
-            <div class="accordion-content active" id="pid-content">
-              <div class="control-group">
-                <label for="control-mode-select">Control Architecture</label>
-                <select id="control-mode-select" class="neon-select">
-                  <option value="local_ctc">Computed Torque Control (CTC)</option>
-                  <option value="local_pid">Decoupled Joint PID</option>
-                  <option value="local_stepper">Stepper Motor Mode (Open-Loop)</option>
-                  <option value="external_torque">External API (Torque Mode)</option>
-                </select>
-              </div>
-
-              <hr class="card-divider" />
-
-              <div class="control-group">
-                <div class="slider-header">
-                  <label for="pid-kp">Proportional Gain (Kp)</label>
-                  <span class="value mono" id="kp-val">12.0</span>
-                </div>
-                <input type="range" id="pid-kp" min="1.0" max="40" value="12.0" step="0.5" class="neon-slider" />
-              </div>
-
-              <div class="control-group">
-                <div class="slider-header">
-                  <label for="pid-ki">Integral Gain (Ki)</label>
-                  <span class="value mono" id="ki-val">0.5</span>
-                </div>
-                <input type="range" id="pid-ki" min="0" max="10" value="0.5" step="0.1" class="neon-slider" />
-              </div>
-
-              <div class="control-group">
-                <div class="slider-header">
-                  <label for="pid-kd">Derivative Gain (Kd)</label>
-                  <span class="value mono" id="kd-val">4.0</span>
-                </div>
-                <input type="range" id="pid-kd" min="0.1" max="15" value="4.0" step="0.1" class="neon-slider" />
-              </div>
-
-              <hr class="card-divider" />
-
-              <div class="control-group">
-                <div class="slider-header">
-                  <label for="phys-damping">Joint Friction / Damping</label>
-                  <span class="value mono" id="damping-val">0.8</span>
-                </div>
-                <input type="range" id="phys-damping" min="0.1" max="5.0" value="0.8" step="0.1" class="neon-slider" />
-              </div>
-
-              <div class="control-group">
-                <div class="slider-header">
-                  <label for="phys-speed-limit">Max Velocity Limit</label>
-                  <span class="value mono" id="speed-limit-val">240</span>°/s
-                </div>
-                <input type="range" id="phys-speed-limit" min="45" max="360" value="240" step="5" class="neon-slider" />
-              </div>
-
-              <div class="control-group">
-                <div class="toggle-container">
-                  <label for="toggle-gravity">Gravity Compensation</label>
-                  <input type="checkbox" id="toggle-gravity" checked class="neon-checkbox" />
-                </div>
-              </div>
             </div>
           </div>
         </aside>
 
-        <!-- Main Display Area -->
+        <!-- Main Content Panel (Webcam Tracker View) -->
         <main class="visualizer-area">
-          <!-- 3D Scene Viewport -->
-          <div class="card viewport-card">
-            <div id="canvas-container">
-              <!-- Three.js will inject canvas here -->
-              <div class="viewport-hud">
-                <div class="hud-item"><span class="badge badge-yaw">BASE:</span> <span id="hud-j1" class="mono">0.0°</span></div>
-                <div class="hud-item"><span class="badge badge-shoulder">SHOULDER:</span> <span id="hud-j2" class="mono">30.0°</span></div>
-                <div class="hud-item"><span class="badge badge-elbow">ELBOW:</span> <span id="hud-j3" class="mono">60.0°</span></div>
-                <div class="hud-item"><span class="badge badge-wrist">WRIST:</span> <span id="hud-j4" class="mono">-10.0°</span></div>
+          <div class="card webcam-card active-webcam-card" style="height: 100%; display: flex; flex-direction: column;">
+            <div class="webcam-header" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+              <h3 style="font-size: 1.2rem;">Webcam Hand & Gaze Tracker</h3>
+              <div style="display: flex; gap: 16px; align-items: center;">
+                <span id="tracking-status-badge" class="status-badge offline" style="font-size: 0.8rem; padding: 4px 10px;">TRACKING OFF</span>
+                <label class="switch" style="width: 46px; height: 24px;">
+                  <input type="checkbox" id="toggle-webcam" />
+                  <span class="toggle-slider" style="border-radius: 24px;"></span>
+                </label>
               </div>
-              <div class="viewport-controls-overlay">
-                <button class="icon-btn" id="btn-reset-camera" title="Reset Camera">🎥 Reset Cam</button>
-                <button class="icon-btn" id="btn-toggle-grid" title="Toggle Grid & Axes">🌐 Grid/Axes</button>
-                <button class="icon-btn" id="btn-toggle-trace" title="Toggle Path Trace">✏️ Trace: ON</button>
+            </div>
+            <p class="card-desc" style="font-size: 0.85rem; margin-bottom: 16px;">Move hand in front of the camera to steer the printer dynamically. Close fist to toggle Pen Down (Z-axis touch), open fist to lift Pen Up.</p>
+            
+            <div class="webcam-viewport" style="flex: 1; aspect-ratio: unset; position: relative; background: #050608; border-radius: 12px; overflow: hidden; border: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center;">
+              <video id="webcam-video" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: contain; transform: scaleX(-1);"></video>
+              <canvas id="webcam-overlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; transform: scaleX(-1);"></canvas>
+              <div id="tracking-status-text" class="tracking-status lost" style="font-size: 0.8rem; padding: 4px 12px; bottom: 12px; right: 12px;">TRACKING OFF</div>
+            </div>
+            
+            <div class="webcam-calib-info" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px; font-size: 0.85rem; padding: 12px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; border: 1px solid var(--border-color);">
+              <div class="toggle-container" style="display: flex; justify-content: space-between; align-items: center;">
+                <label for="require-eye-contact" style="color: var(--text-main); font-weight: 500;">Require Eye Contact</label>
+                <input type="checkbox" id="require-eye-contact" class="neon-checkbox" style="width: 18px; height: 18px;" />
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: var(--text-muted);">Gaze Status:</span>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <button id="btn-calibrate-gaze" style="padding: 4px 10px; font-size: 0.75rem; border-radius: 6px; border: 1px solid var(--primary-color); background: rgba(0, 240, 255, 0.1); color: var(--accent-base); cursor: pointer; transition: all 0.2s;">Calibrate Gaze</button>
+                  <span id="eye-contact-status" class="status-badge offline">NO CONTACT</span>
+                </div>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="color: var(--text-muted);">Grip State (Pen):</span>
+                <span id="grip-status" class="status-badge offline" style="background: rgba(139, 148, 158, 0.15); color: #8b949e; border-color: rgba(139, 148, 158, 0.3);">OPEN</span>
               </div>
             </div>
           </div>
-
-          <!-- Live Graphs / Dashboard Diagnostics -->
-          <section class="diagnostics-panel">
-            <div class="card chart-card">
-              <div class="chart-header">
-                <h4>Joint Tracking Telemetry (Target vs. Actual)</h4>
-                <div class="chart-legend">
-                  <span class="legend-item"><span class="legend-color target-color"></span>Target</span>
-                  <span class="legend-item"><span class="legend-color actual-color"></span>Actual</span>
-                </div>
-              </div>
-              <div class="charts-grid">
-                <div class="chart-container-box">
-                  <span class="chart-label">Joint 1 (Base)</span>
-                  <canvas id="chart-j1" class="telemetry-chart"></canvas>
-                  <div class="chart-stats">Err: <span id="chart-err-j1" class="mono">0.0°</span></div>
-                </div>
-                <div class="chart-container-box">
-                  <span class="chart-label">Joint 2 (Shoulder)</span>
-                  <canvas id="chart-j2" class="telemetry-chart"></canvas>
-                  <div class="chart-stats">Err: <span id="chart-err-j2" class="mono">0.0°</span></div>
-                </div>
-                <div class="chart-container-box">
-                  <span class="chart-label">Joint 3 (Elbow)</span>
-                  <canvas id="chart-j3" class="telemetry-chart"></canvas>
-                  <div class="chart-stats">Err: <span id="chart-err-j3" class="mono">0.0°</span></div>
-                </div>
-                <div class="chart-container-box">
-                  <span class="chart-label">Joint 4 (Wrist)</span>
-                  <canvas id="chart-j4" class="telemetry-chart"></canvas>
-                  <div class="chart-stats">Err: <span id="chart-err-j4" class="mono">0.0°</span></div>
-                </div>
-              </div>
-            </div>
-          </section>
         </main>
       </div>
     </div>
