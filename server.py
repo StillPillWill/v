@@ -346,12 +346,12 @@ if __name__ == "__main__":
     print("         NEXUS-4 PRINTER CONTROLLER BACKEND       ")
     print("==================================================")
     
-    # Pre-probe printer connection on startup
-    try_connect_printer()
-    
-    # Start server threads
+    # Start server threads immediately
     threading.Thread(target=start_http_server, daemon=True).start()
     threading.Thread(target=start_ws_server, daemon=True).start()
+    
+    # Pre-probe printer connection on startup asynchronously
+    threading.Thread(target=try_connect_printer, daemon=True).start()
     
     try:
         while True:
