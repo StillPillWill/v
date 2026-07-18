@@ -162,20 +162,23 @@
               <canvas id="plotter-preview" style="width: 100%; border-radius: 8px; border: 1px solid var(--border-color); display: none; background: #000; margin-bottom: 12px;"></canvas>
 
               <!-- Controls -->
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
                 <div style="display: flex; flex-direction: column; gap: 4px;">
-                  <label style="color: var(--text-muted); font-size: 0.8rem;">Resolution (px height)</label>
+                  <label style="color: var(--text-muted); font-size: 0.75rem;">Resolution (px height)</label>
                   <input type="number" id="plotter-lines" value="160" min="40" max="400" step="20" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 4px;">
-                  <label style="color: var(--text-muted); font-size: 0.8rem;">Edge Sensitivity (1-50)</label>
+                  <label style="color: var(--text-muted); font-size: 0.75rem;">Edge Sensitivity (1-50)</label>
                   <input type="number" id="plotter-threshold" value="30" min="1" max="100" step="1" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
                 </div>
-              </div>
-              
-              <div style="display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px;">
-                <label style="color: var(--text-muted); font-size: 0.8rem;">Min Stroke Length (filter noise px)</label>
-                <input type="number" id="plotter-min-stroke" value="4" min="1" max="50" step="1" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <label style="color: var(--text-muted); font-size: 0.75rem;">Min Stroke (filter noise)</label>
+                  <input type="number" id="plotter-min-stroke" value="4" min="1" max="50" step="1" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <label style="color: var(--text-muted); font-size: 0.75rem;">Simplify Paths (px tolerance)</label>
+                  <input type="number" id="plotter-simplification" value="1.5" min="0.1" max="10.0" step="0.1" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
+                </div>
               </div>
 
               <div id="plotter-status" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px; min-height: 18px;"></div>

@@ -73,11 +73,12 @@ export class ImagePlotter {
    * @param {number} resolution — processing height in pixels (80–400)
    * @param {number} threshold  — XDoG edge threshold; lower = more edges (1–50)
    * @param {number} minStroke  — minimum stroke length in pixels to keep (2–20)
+   * @param {number} simplification — Douglas-Peucker epsilon tolerance (0.1–10.0)
    * @param {object} workspace
    * @param {number} penDownZ
    * @param {number} penUpZ
    */
-  process(resolution, threshold, minStroke, workspace, penDownZ, penUpZ) {
+  process(resolution, threshold, minStroke, simplification, workspace, penDownZ, penUpZ) {
     if (!this.imageBitmap) throw new Error('No image loaded');
     this._lastPenUpZ = penUpZ;
 
@@ -120,7 +121,7 @@ export class ImagePlotter {
     // ── F–I: Trace, filter, simplify, sort ────────────────────────────────
     const rawStrokes  = this._traceStrokes(sketch, resW, resH);
     const filtered    = rawStrokes.filter(s => s.length >= Math.max(2, minStroke));
-    const simplified  = filtered.map(s => this._douglasPeucker(s, 0.8)).filter(s => s.length >= 2);
+    const simplified  = filtered.map(s => this._douglasPeucker(s, simplification)).filter(s => s.length >= 2);
     const sorted      = this._sortStrokes(simplified);
 
     // ── J: Map to printer coordinates ─────────────────────────────────────
