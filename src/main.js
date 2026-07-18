@@ -52,16 +52,6 @@ let lastSentTime = 0;
 let webcamActive = false;
 let mediaPipeCamera = null;
 let mediaPipeHands = null;
-let mediaPipeFaceMesh = null;
-let eyeContactRequired = false;
-let eyeContactActive = false;
-let lastEyeContactTime = 0;
-let gazeCalibrated = false;
-let calibYaw = 0;
-let calibPitch = 0.54; // Default midpoint
-let calibLeftGaze = 0;
-let calibRightGaze = 0;
-let shouldCalibrateGazeNextFrame = false;
 let fistClosed = false;
 const handProcessor = new HandTrackingProcessor();
 let lastTrackedTime = 0;
@@ -98,9 +88,6 @@ const dom = {
   webcamOverlay: document.getElementById('webcam-overlay'),
   trackingStatusText: document.getElementById('tracking-status-text'),
   trackingStatusBadge: document.getElementById('tracking-status-badge'),
-  requireEyeContact: document.getElementById('require-eye-contact'),
-  eyeContactStatus: document.getElementById('eye-contact-status'),
-  btnCalibrateGaze: document.getElementById('btn-calibrate-gaze'),
   gripStatus: document.getElementById('grip-status')
 };
 
@@ -250,28 +237,6 @@ function initEvents() {
     }
   });
 
-  // Require Eye Contact Checkbox Listener
-  dom.requireEyeContact.addEventListener('change', (e) => {
-    eyeContactRequired = e.target.checked;
-    if (!eyeContactRequired) {
-      eyeContactActive = false;
-      dom.eyeContactStatus.textContent = 'NO CONTACT';
-      dom.eyeContactStatus.className = 'status-badge offline';
-    }
-  });
-
-  // Calibrate Gaze Button Listener
-  dom.btnCalibrateGaze.addEventListener('click', () => {
-    if (!webcamActive) {
-      alert('Start webcam tracking first before calibrating gaze!');
-      return;
-    }
-    shouldCalibrateGazeNextFrame = true;
-    dom.btnCalibrateGaze.textContent = 'Calibrating...';
-    dom.btnCalibrateGaze.style.background = 'rgba(255, 170, 0, 0.2)';
-    dom.btnCalibrateGaze.style.borderColor = '#ffaa00';
-    dom.btnCalibrateGaze.style.color = '#ffaa00';
-  });
 }
 
 function updateCartesianTexts() {
@@ -350,7 +315,7 @@ function pausePathPlayback() {
   dom.btnPlayPath.classList.add('btn-success');
 }
 
-// --- MediaPipe Hand & Face Tracking Setup ---
+// --- MediaPipe Hand Tracking Setup ---
 function enableWebcamTracking() {
   if (webcamActive) return;
 
@@ -367,27 +332,12 @@ function enableWebcamTracking() {
 
       mediaPipeHands.setOptions({
         maxNumHands: 1,
-        modelComplexity: 1,
-        minDetectionConfidence: 0.6,
-        minTrackingConfidence: 0.6
-      });
-
-      mediaPipeHands.onResults(onHandResults);
-    }
-
-    if (!mediaPipeFaceMesh) {
-      mediaPipeFaceMesh = new window.FaceMesh({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
-      });
-
-      mediaPipeFaceMesh.setOptions({
-        maxNumFaces: 1,
-        refineLandmarks: true,
+        modelComplexity: 0, // Light/fastest model
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
       });
 
-      mediaPipeFaceMesh.onResults(onFaceResults);
+      mediaPipeHands.onResults(onHandResults);
     }
 
     navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } })
@@ -403,9 +353,6 @@ function enableWebcamTracking() {
               if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
 
               await mediaPipeHands.send({ image: dom.webcamVideo });
-              if (mediaPipeFaceMesh) {
-                await mediaPipeFaceMesh.send({ image: dom.webcamVideo });
-              }
             }
           },
           width: 640,
@@ -452,205 +399,12 @@ function disableWebcamTracking() {
   dom.trackingStatusBadge.textContent = 'TRACKING OFF';
   dom.trackingStatusBadge.className = 'status-badge offline';
 
-  eyeContactActive = false;
-  dom.eyeContactStatus.textContent = 'NO CONTACT';
-  dom.eyeContactStatus.className = 'status-badge offline';
-
   fistClosed = false;
-  dom.gripStatus.textContent = 'OPEN';
+  dom.gripStatus.textContent = 'OPEN (PEN UP)';
   dom.gripStatus.className = 'status-badge offline';
   dom.gripStatus.style.background = 'rgba(139, 148, 158, 0.15)';
   dom.gripStatus.style.color = '#8b949e';
   dom.gripStatus.style.borderColor = 'rgba(139, 148, 158, 0.3)';
-}
-
-function onFaceResults(results) {
-  if (!webcamActive) return;
-
-  const canvas = dom.webcamOverlay;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-
-  const width = canvas.width;
-  const height = canvas.height;
-
-  if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-    const landmarks = results.multiFaceLandmarks[0];
-
-    const noseTip = landmarks[1];
-    const leftEyeInner = landmarks[133];
-    const rightEyeInner = landmarks[362];
-    const leftEyeOuter = landmarks[33];
-    const rightEyeOuter = landmarks[263];
-    const forehead = landmarks[10];
-    const chin = landmarks[152];
-
-    const eyeCenter = (leftEyeInner.x + rightEyeInner.x) / 2;
-    const yawOffset = noseTip.x - eyeCenter;
-    const eyeDistance = Math.sqrt(
-      (rightEyeInner.x - leftEyeInner.x) ** 2 + 
-      (rightEyeInner.y - leftEyeInner.y) ** 2
-    );
-    const normalizedYaw = yawOffset / (eyeDistance + 1e-6);
-
-    const faceHeight = chin.y - forehead.y;
-    const noseRelativeY = (noseTip.y - forehead.y) / (faceHeight + 1e-6);
-
-    let leftGazeOffset = 0;
-    let rightGazeOffset = 0;
-    const irisesPresent = landmarks.length > 473;
-
-    if (irisesPresent) {
-      const leftIris = landmarks[468];
-      const rightIris = landmarks[473];
-
-      const leftEyeWidth = Math.abs(leftEyeOuter.x - leftEyeInner.x);
-      const leftEyeCenter = (leftEyeOuter.x + leftEyeInner.x) / 2;
-      leftGazeOffset = (leftIris.x - leftEyeCenter) / (leftEyeWidth + 1e-6);
-
-      const rightEyeWidth = Math.abs(rightEyeOuter.x - rightEyeInner.x);
-      const rightEyeCenter = (rightEyeOuter.x + rightEyeInner.x) / 2;
-      rightGazeOffset = (rightIris.x - rightEyeCenter) / (rightEyeWidth + 1e-6);
-    }
-
-    if (shouldCalibrateGazeNextFrame) {
-      calibYaw = normalizedYaw;
-      calibPitch = noseRelativeY;
-      calibLeftGaze = leftGazeOffset;
-      calibRightGaze = rightGazeOffset;
-      gazeCalibrated = true;
-      shouldCalibrateGazeNextFrame = false;
-
-      dom.btnCalibrateGaze.textContent = 'Calibrated';
-      dom.btnCalibrateGaze.style.background = 'rgba(57, 255, 20, 0.15)';
-      dom.btnCalibrateGaze.style.borderColor = '#39ff14';
-      dom.btnCalibrateGaze.style.color = '#39ff14';
-    }
-
-    let headValid = false;
-    let gazeValid = false;
-
-    if (gazeCalibrated) {
-      headValid = Math.abs(normalizedYaw - calibYaw) < 0.45 && Math.abs(noseRelativeY - calibPitch) < 0.20;
-      gazeValid = !irisesPresent || (Math.abs(leftGazeOffset - calibLeftGaze) < 0.35 && Math.abs(rightGazeOffset - calibRightGaze) < 0.35);
-    } else {
-      headValid = Math.abs(normalizedYaw) < 0.45 && Math.abs(noseRelativeY - 0.54) < 0.20;
-      gazeValid = !irisesPresent || (Math.abs(leftGazeOffset) < 0.45 && Math.abs(rightGazeOffset) < 0.45);
-    }
-
-    const gazeLock = headValid && gazeValid;
-
-    if (gazeLock) {
-      eyeContactActive = true;
-      lastEyeContactTime = performance.now();
-    } else {
-      eyeContactActive = false;
-    }
-
-    if (eyeContactRequired) {
-      if (eyeContactActive) {
-        dom.eyeContactStatus.textContent = 'GAZE LOCKED';
-        dom.eyeContactStatus.className = 'status-badge';
-      } else {
-        dom.eyeContactStatus.textContent = 'LOOK AT SCREEN';
-        dom.eyeContactStatus.className = 'status-badge offline';
-      }
-    } else {
-      dom.eyeContactStatus.textContent = eyeContactActive ? 'GAZE LOCKED' : 'NO CONTACT';
-      dom.eyeContactStatus.className = eyeContactActive ? 'status-badge' : 'status-badge offline';
-    }
-
-    // Draw reticles
-    ctx.strokeStyle = eyeContactActive ? '#39ff14' : '#ef4444';
-    ctx.lineWidth = 2;
-    ctx.shadowBlur = 6;
-    ctx.shadowColor = eyeContactActive ? '#39ff14' : '#ef4444';
-
-    [leftEyeInner, rightEyeInner].forEach((eye) => {
-      ctx.beginPath();
-      ctx.arc(eye.x * width, eye.y * height, 15, 0, 2 * Math.PI);
-      ctx.stroke();
-    });
-
-    if (irisesPresent) {
-      ctx.fillStyle = eyeContactActive ? '#39ff14' : '#ef4444';
-      [landmarks[468], landmarks[473]].forEach((iris) => {
-        ctx.beginPath();
-        ctx.arc(iris.x * width, iris.y * height, 4, 0, 2 * Math.PI);
-        ctx.fill();
-      });
-    }
-
-    ctx.fillStyle = eyeContactActive ? '#39ff14' : '#ef4444';
-    ctx.font = 'bold 10px JetBrains Mono';
-    ctx.fillText(
-      eyeContactActive ? 'SYS_GAZE: LOCKED' : 'SYS_GAZE: SEARCHING', 
-      10, 
-      canvas.height - 15
-    );
-    
-    // Diagnostic box
-    ctx.fillStyle = 'rgba(10, 12, 16, 0.75)';
-    ctx.fillRect(10, 10, 240, 60);
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = eyeContactActive ? 'rgba(57, 255, 20, 0.3)' : 'rgba(239, 68, 68, 0.3)';
-    ctx.strokeRect(10, 10, 240, 60);
-    
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '8px JetBrains Mono';
-    
-    const yawColor = headValid ? '#39ff14' : '#ef4444';
-    const pitchColor = headValid ? '#39ff14' : '#ef4444';
-    const lGazeColor = gazeValid ? '#39ff14' : '#ef4444';
-    const rGazeColor = gazeValid ? '#39ff14' : '#ef4444';
-
-    const refYawText = gazeCalibrated ? `${calibYaw >= 0 ? '+' : ''}${calibYaw.toFixed(2)}` : '0.00';
-    const refPitchText = gazeCalibrated ? `${calibPitch.toFixed(2)}` : '0.54';
-    const refLGazeText = gazeCalibrated ? `${calibLeftGaze >= 0 ? '+' : ''}${calibLeftGaze.toFixed(2)}` : '0.00';
-    const refRGazeText = gazeCalibrated ? `${calibRightGaze >= 0 ? '+' : ''}${calibRightGaze.toFixed(2)}` : '0.00';
-
-    ctx.fillStyle = '#8b949e'; ctx.fillText('HEAD YAW   :', 18, 22);
-    ctx.fillStyle = yawColor;    ctx.fillText(`${normalizedYaw >= 0 ? '+' : ''}${normalizedYaw.toFixed(2)} (ref: ${refYawText})`, 95, 22);
-    
-    ctx.fillStyle = '#8b949e'; ctx.fillText('HEAD PITCH :', 18, 33);
-    ctx.fillStyle = pitchColor;  ctx.fillText(`${noseRelativeY.toFixed(2)} (ref: ${refPitchText})`, 95, 33);
-    
-    ctx.fillStyle = '#8b949e'; ctx.fillText('L_PUPIL_DX :', 18, 44);
-    ctx.fillStyle = lGazeColor;  ctx.fillText(`${leftGazeOffset >= 0 ? '+' : ''}${leftGazeOffset.toFixed(2)} (ref: ${refLGazeText})`, 95, 44);
-    
-    ctx.fillStyle = '#8b949e'; ctx.fillText('R_PUPIL_DX :', 18, 55);
-    ctx.fillStyle = rGazeColor;  ctx.fillText(`${rightGazeOffset >= 0 ? '+' : ''}${rightGazeOffset.toFixed(2)} (ref: ${refRGazeText})`, 95, 55);
-
-    if (gazeCalibrated) {
-      ctx.fillStyle = '#39ff14';
-      ctx.font = 'bold 7px JetBrains Mono';
-      ctx.fillText('[CALIB]', 205, 18);
-    }
-    ctx.shadowBlur = 0;
-  } else {
-    const elapsed = performance.now() - lastEyeContactTime;
-    if (webcamActive && elapsed < 1800) {
-      eyeContactActive = true;
-      dom.eyeContactStatus.textContent = 'GAZE COOLDOWN';
-      dom.eyeContactStatus.className = 'status-badge online';
-
-      ctx.strokeStyle = '#ffaa00';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath();
-      ctx.arc(width / 2, height / 2, 40, 0, 2 * Math.PI);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      
-      ctx.fillStyle = '#ffaa00';
-      ctx.font = 'bold 10px JetBrains Mono';
-      ctx.fillText(`SYS_GAZE: MEMORY_HOLD (${((1800 - elapsed) / 1000).toFixed(1)}s)`, 10, canvas.height - 15);
-    } else {
-      eyeContactActive = false;
-      dom.eyeContactStatus.textContent = 'NO FACE';
-      dom.eyeContactStatus.className = 'status-badge offline';
-    }
-  }
 }
 
 function onHandResults(results) {
@@ -687,19 +441,19 @@ function onHandResults(results) {
     fistClosed = checkFistClosed(landmarks);
 
     if (fistClosed) {
-      dom.gripStatus.textContent = 'CLOSED';
+      dom.gripStatus.textContent = 'CLOSED (PEN DOWN)';
       dom.gripStatus.className = 'status-badge';
       dom.gripStatus.style.background = 'rgba(255, 170, 0, 0.15)';
       dom.gripStatus.style.color = '#ffaa00';
       dom.gripStatus.style.borderColor = 'rgba(255, 170, 0, 0.3)';
-      targetPen = 0.0; // Closed fist is Pen Down
+      targetPen = 0.0;
     } else {
-      dom.gripStatus.textContent = 'OPEN';
+      dom.gripStatus.textContent = 'OPEN (PEN UP)';
       dom.gripStatus.className = 'status-badge offline';
       dom.gripStatus.style.background = 'rgba(139, 148, 158, 0.15)';
       dom.gripStatus.style.color = '#8b949e';
       dom.gripStatus.style.borderColor = 'rgba(139, 148, 158, 0.3)';
-      targetPen = 1.0; // Open hand is Pen Up
+      targetPen = 1.0;
     }
 
     drawHandSkeleton(ctx, landmarks);
@@ -708,7 +462,7 @@ function onHandResults(results) {
     if (targets) {
       webcamTargetX = targets.x;
       webcamTargetY = targets.y;
-      webcamTargetZ = targets.z;
+      webcamTargetZ = fistClosed ? 0.0 : 15.0; // Force Pen Down/Up heights
     }
   } else {
     dom.trackingStatusText.textContent = 'LOST';
@@ -718,9 +472,9 @@ function onHandResults(results) {
     
     handProcessor.isTracking = false;
     fistClosed = false;
-    targetPen = 1.0; // Pen up on tracking lost
+    targetPen = 1.0;
 
-    dom.gripStatus.textContent = 'OPEN';
+    dom.gripStatus.textContent = 'OPEN (PEN UP)';
     dom.gripStatus.className = 'status-badge offline';
     dom.gripStatus.style.background = 'rgba(139, 148, 158, 0.15)';
     dom.gripStatus.style.color = '#8b949e';
@@ -833,8 +587,7 @@ function update(time) {
   }
 
   // 2. Webcam Coordinate Smoothing
-  const allowTrackingUpdate = !eyeContactRequired || (eyeContactRequired && eyeContactActive);
-  if (webcamActive && handProcessor.isTracking && allowTrackingUpdate) {
+  if (webcamActive && handProcessor.isTracking) {
     const k_pos = 12.0;
     
     targetX += (webcamTargetX - targetX) * (1 - Math.exp(-k_pos * dt));
@@ -862,17 +615,10 @@ function update(time) {
     telemetryStatus.textContent = 'PRINTER OFFLINE';
     telemetryStatus.className = 'value status-badge offline';
   } else if (webcamActive && handProcessor.isTracking) {
-    if (eyeContactRequired && !eyeContactActive) {
-      telemetryStatus.textContent = 'PAUSED - NO GAZE';
-      telemetryStatus.style.background = 'rgba(255, 170, 0, 0.15)';
-      telemetryStatus.style.color = '#ffaa00';
-      telemetryStatus.style.borderColor = 'rgba(255, 170, 0, 0.3)';
-    } else {
-      telemetryStatus.textContent = 'WEBCAM DRIVING';
-      telemetryStatus.style.background = 'rgba(57, 255, 20, 0.15)';
-      telemetryStatus.style.color = '#39ff14';
-      telemetryStatus.style.borderColor = 'rgba(57, 255, 20, 0.3)';
-    }
+    telemetryStatus.textContent = 'WEBCAM DRIVING';
+    telemetryStatus.style.background = 'rgba(57, 255, 20, 0.15)';
+    telemetryStatus.style.color = '#39ff14';
+    telemetryStatus.style.borderColor = 'rgba(57, 255, 20, 0.3)';
   } else if (isPlayingPath) {
     telemetryStatus.textContent = 'RUNNING PLANNER';
     telemetryStatus.style.background = 'rgba(0, 240, 255, 0.15)';
@@ -905,18 +651,10 @@ function update(time) {
     const dz = safePos.z - lastSentZ;
     const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
     
-    const penStateChanged = targetPen !== lastSentPen;
     const nowMs = performance.now();
 
     // Limit movement G-code frequency to 50Hz (20ms interval) to keep queue clean
-    if (penStateChanged) {
-      socket.send("gcode:M410"); // Quick stop previous move
-      setTimeout(() => {
-        const cmd = targetPen === 1.0 ? "gcode:G91\ngcode:G1 Z4 F99999\ngcode:G90" : "gcode:G1 Z0 F99999";
-        cmd.split("\n").forEach(line => socket.send(line));
-      }, 30);
-      lastSentPen = targetPen;
-    } else if (dist > 0.05 && (nowMs - lastSentTime > 20)) {
+    if (dist > 0.05 && (nowMs - lastSentTime > 20)) {
       const vNorm = shaper.vel.norm();
       const feedrate = Math.floor(Math.min(99999, Math.max(1000, vNorm * 60)));
       

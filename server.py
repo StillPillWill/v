@@ -143,6 +143,7 @@ def printer_reader_thread():
                 time.sleep(0.002)
         except Exception as e:
             print(f"[SERIAL READER ERROR] {e}")
+            disconnect_printer()
             break
     print("[SERIAL] Reader thread stopped.")
 
@@ -162,11 +163,10 @@ def printer_writer_thread():
                 
         if cmd:
             try:
-                # Debug logging of movements
-                # print(f"[SERIAL SEND] {cmd}")
                 serial_port.write((cmd + "\n").encode('utf-8'))
             except Exception as e:
                 print(f"[SERIAL WRITER ERROR] {e}")
+                disconnect_printer()
                 with serial_lock:
                     in_flight = max(0, in_flight - 1)
 
@@ -343,12 +343,10 @@ def handle_ws_client(conn, addr):
                     gcode = msg[6:]
                     if printer_connected:
                         if gcode.startswith("G1"):
-                            # Queue movements with lock
+                            # No queuing: overwrite with the single latest command to prevent lag!
                             with serial_queue_cv:
-                                # Keep queue short to prevent movement lag
-                                if len(serial_queue) < 10:
-                                    serial_queue.append(gcode)
-                                    serial_queue_cv.notify()
+                                serial_queue = [gcode]
+                                serial_queue_cv.notify()
                         else:
                             # Send instant commands (M-codes, G28, etc) straight to port
                             try:

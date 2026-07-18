@@ -12,7 +12,6 @@
     <!-- MediaPipe Libraries for Webcam Hand Tracking -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
     
     <!-- Import Map to resolve bare specifiers in the browser natively -->
     <script type="importmap">
@@ -140,7 +139,7 @@
         <main class="visualizer-area">
           <div class="card webcam-card active-webcam-card" style="height: 100%; display: flex; flex-direction: column;">
             <div class="webcam-header" style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-              <h3 style="font-size: 1.2rem;">Webcam Hand & Gaze Tracker</h3>
+              <h3 style="font-size: 1.2rem;">Webcam Hand Tracker</h3>
               <div style="display: flex; gap: 16px; align-items: center;">
                 <span id="tracking-status-badge" class="status-badge offline" style="font-size: 0.8rem; padding: 4px 10px;">TRACKING OFF</span>
                 <label class="switch" style="width: 46px; height: 24px;">
@@ -157,22 +156,9 @@
               <div id="tracking-status-text" class="tracking-status lost" style="font-size: 0.8rem; padding: 4px 12px; bottom: 12px; right: 12px;">TRACKING OFF</div>
             </div>
             
-            <div class="webcam-calib-info" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px; font-size: 0.85rem; padding: 12px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; border: 1px solid var(--border-color);">
-              <div class="toggle-container" style="display: flex; justify-content: space-between; align-items: center;">
-                <label for="require-eye-contact" style="color: var(--text-main); font-weight: 500;">Require Eye Contact</label>
-                <input type="checkbox" id="require-eye-contact" class="neon-checkbox" style="width: 18px; height: 18px;" />
-              </div>
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="color: var(--text-muted);">Gaze Status:</span>
-                <div style="display: flex; gap: 8px; align-items: center;">
-                  <button id="btn-calibrate-gaze" style="padding: 4px 10px; font-size: 0.75rem; border-radius: 6px; border: 1px solid var(--primary-color); background: rgba(0, 240, 255, 0.1); color: var(--accent-base); cursor: pointer; transition: all 0.2s;">Calibrate Gaze</button>
-                  <span id="eye-contact-status" class="status-badge offline">NO CONTACT</span>
-                </div>
-              </div>
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <span style="color: var(--text-muted);">Grip State (Pen):</span>
-                <span id="grip-status" class="status-badge offline" style="background: rgba(139, 148, 158, 0.15); color: #8b949e; border-color: rgba(139, 148, 158, 0.3);">OPEN</span>
-              </div>
+            <div class="webcam-calib-info" style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; font-size: 0.85rem; padding: 12px; background: rgba(0, 0, 0, 0.2); border-radius: 8px; border: 1px solid var(--border-color);">
+              <span style="color: var(--text-muted); font-weight: 500;">Grip State (Pen Trigger):</span>
+              <span id="grip-status" class="status-badge offline" style="background: rgba(139, 148, 158, 0.15); color: #8b949e; border-color: rgba(139, 148, 158, 0.3); font-size: 0.85rem; padding: 4px 12px;">OPEN (PEN UP)</span>
             </div>
           </div>
         </main>
