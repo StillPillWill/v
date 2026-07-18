@@ -79,9 +79,8 @@ const dom = {
   trackingStatusBadge: document.getElementById('tracking-status-badge'),
   gripStatus: document.getElementById('grip-status'),
   penDownZSlider: document.getElementById('pen-down-z'),
-  penDownValText: document.getElementById('pen-down-val'),
   penUpZSlider: document.getElementById('pen-up-z'),
-  penUpValText: document.getElementById('pen-up-val')
+  workspaceSizeInput: document.getElementById('workspace-size')
 };
 
 // --- WebSocket Management ---
@@ -233,6 +232,7 @@ function initEvents() {
   // Initialize values from HTML inputs on load
   if (dom.penDownZSlider) penDownZ = parseFloat(dom.penDownZSlider.value) || 0.0;
   if (dom.penUpZSlider) penUpZ = parseFloat(dom.penUpZSlider.value) || 15.0;
+  if (dom.workspaceSizeInput) handProcessor.workspaceSize = parseFloat(dom.workspaceSizeInput.value) || 200.0;
 
   // Pen Height calibration number inputs (updates live, listening to both input and change events for cross-browser safety)
   const handlePenDownChange = (e) => {
@@ -254,6 +254,17 @@ function initEvents() {
   };
   dom.penUpZSlider.addEventListener('input', handlePenUpChange);
   dom.penUpZSlider.addEventListener('change', handlePenUpChange);
+
+  // Configurable Workspace Size handler
+  const handleWorkspaceSizeChange = (e) => {
+    const val = parseFloat(e.target.value);
+    if (!isNaN(val) && val >= 50.0 && val <= 400.0) {
+      handProcessor.workspaceSize = val;
+      console.log("[CALIBRATION] Workspace Size updated to:", val, "mm");
+    }
+  };
+  dom.workspaceSizeInput.addEventListener('input', handleWorkspaceSizeChange);
+  dom.workspaceSizeInput.addEventListener('change', handleWorkspaceSizeChange);
 }
 
 function updateCartesianTexts() {

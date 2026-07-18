@@ -54,7 +54,10 @@ export class HandTrackingProcessor {
     this.filterPitch = new OneEuroFilter(0.4, 0.03, 1.0);   // Wrist tilt (highly responsive)
 
     this.isTracking = false;
-    this.lastValidTargets = { x: 120, y: 0, z: 150, pitch: 0 };
+    this.workspaceSize = 200.0;
+    this.centerX = 292.0; // Center of X bed (585 / 2)
+    this.centerY = 387.0; // Center of Y bed (775 / 2)
+    this.lastValidTargets = { x: 292, y: 387, z: 15, pitch: 0 };
   }
 
   /**
@@ -98,9 +101,14 @@ export class HandTrackingProcessor {
     const targetNx = (nxCurve / 2.0) + 0.5;
     const targetNy = (nyCurve / 2.0) + 0.5;
 
-    // Map to physical printer workspace (200x200mm bounded area)
-    const rawTargetX = 192.0 + targetNx * 200.0;
-    const rawTargetY = 287.0 + targetNy * 200.0;
+    // Map to physical printer workspace (dynamically sized and centered area)
+    const minX = this.centerX - this.workspaceSize / 2.0;
+    const maxX = this.centerX + this.workspaceSize / 2.0;
+    const minY = this.centerY - this.workspaceSize / 2.0;
+    const maxY = this.centerY + this.workspaceSize / 2.0;
+
+    const rawTargetX = minX + targetNx * this.workspaceSize;
+    const rawTargetY = minY + targetNy * this.workspaceSize;
 
     // Dummy Z (actual Z is driven by fistClosed binary check in main.js)
     const rawTargetZ = 15.0;
@@ -114,10 +122,10 @@ export class HandTrackingProcessor {
     const smoothZ = this.filterZ.filter(rawTargetZ, dt);
     const smoothPitch = this.filterPitch.filter(rawPitchDeg, dt);
 
-    // Save final safe values centered/clamped in the 200x200mm area
+    // Save final safe values centered/clamped in the workspace area
     this.lastValidTargets = {
-      x: Math.max(192, Math.min(392, smoothX)),
-      y: Math.max(287, Math.min(487, smoothY)),
+      x: Math.max(minX, Math.min(maxX, smoothX)),
+      y: Math.max(minY, Math.min(maxY, smoothY)),
       z: Math.max(0, Math.min(50, smoothZ)),
       pitch: Math.max(-80, Math.min(80, smoothPitch))
     };
