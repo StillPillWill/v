@@ -164,12 +164,12 @@
               <!-- Controls -->
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px;">
                 <div style="display: flex; flex-direction: column; gap: 4px;">
-                  <label style="color: var(--text-muted); font-size: 0.8rem;">Scan Lines</label>
-                  <input type="number" id="plotter-lines" value="40" min="10" max="120" step="5" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
+                  <label style="color: var(--text-muted); font-size: 0.8rem;">Resolution (px height)</label>
+                  <input type="number" id="plotter-lines" value="80" min="20" max="200" step="10" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 4px;">
-                  <label style="color: var(--text-muted); font-size: 0.8rem;">Threshold (0-255)</label>
-                  <input type="number" id="plotter-threshold" value="128" min="40" max="220" step="5" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
+                  <label style="color: var(--text-muted); font-size: 0.8rem;">Edge Sensitivity (0-255)</label>
+                  <input type="number" id="plotter-threshold" value="40" min="5" max="200" step="5" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
                 </div>
               </div>
 

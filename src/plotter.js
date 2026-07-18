@@ -1,28 +1,30 @@
 /**
- * ImagePlotter — converts an image to marker-friendly scanline G-code paths.
+ * ImagePlotter — converts an image to marker-friendly outline pen paths.
  *
  * Pipeline:
- *  1. Load image → draw to hidden canvas at low resolution
- *  2. Extract RGBA pixel data
- *  3. Convert to luminance (perceptual grayscale)
- *  4. Apply CLAHE-style adaptive normalization to fight bright lighting bias
- *  5. Gaussian-blur to kill fine noise that would waste ink with a marker
- *  6. Binarize with per-row median threshold (lighting-robust)
- *  7. Trace horizontal scanlines → contiguous "pen-down" segments
- *  8. Render colour-coded preview to an output canvas
- *  9. Expose path as array of {x, y, z} waypoints in printer coordinates
+ *  1. Load image -> draw to processing canvas (low resolution)
+ *  2. Perceptual grayscale (Rec.709)
+ *  3. CLAHE-lite contrast normalization (handles bright/uneven lighting)
+ *  4. Gaussian blur (kill noise before edge detection)
+ *  5. Sobel edge detection -> gradient magnitude map
+ *  6. Non-maximum suppression (thin edges to 1px wide)
+ *  7. Hysteresis double-threshold (strong + weak edges)
+ *  8. Connected 8-path tracing -> ordered pen stroke chains
+ *  9. Map strokes to printer coordinates, generate G-code waypoints
+ * 10. Render preview
  */
 export class ImagePlotter {
   constructor() {
-    this.waypoints = [];       // [{x, y, z}, ...]  printer coords
+    this.waypoints = [];       // [{x, y, z}, ...]
     this.processCanvas = document.createElement('canvas');
-    this.previewCanvas = null; // set externally (document canvas)
+    this.previewCanvas = null;
     this.imageBitmap = null;
+    this._lastPenDownZ = 0;
+    this._lastPenUpZ = 15;
   }
 
-  // ── 1. Image ingest ───────────────────────────────────────────────────────
+  // -- 1. Image ingest -------------------------------------------------------
 
-  /** Load from a File/Blob object (file picker or drag-drop) */
   loadFromFile(file) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
@@ -33,7 +35,6 @@ export class ImagePlotter {
     });
   }
 
-  /** Load from a video element (camera snapshot) */
   loadFromVideo(videoEl) {
     return new Promise((resolve) => {
       const snap = document.createElement('canvas');
@@ -46,23 +47,22 @@ export class ImagePlotter {
     });
   }
 
-  // ── 2. Core processing ────────────────────────────────────────────────────
+  // -- 2. Core processing ----------------------------------------------------
 
   /**
-   * Process the loaded image.
-   * @param {number} numLines   – number of scanlines across the image (determines "resolution")
-   * @param {number} threshold  – global threshold hint [0-255]; actual per-row threshold adapts around this
-   * @param {object} workspace  – { centerX, centerY, workspaceWidth, workspaceHeight }
-   * @param {number} penDownZ   – Z coord when pen touches paper
-   * @param {number} penUpZ     – Z coord when pen is lifted
-   * @returns {number}  total waypoint count
+   * @param {number} numLines   - controls render resolution (height in px)
+   * @param {number} threshold  - Canny high threshold hint [0-255]
+   * @param {object} workspace  - { centerX, centerY, workspaceWidth, workspaceHeight }
+   * @param {number} penDownZ
+   * @param {number} penUpZ
+   * @returns {number} total waypoint count
    */
   process(numLines, threshold, workspace, penDownZ, penUpZ) {
     if (!this.imageBitmap) throw new Error('No image loaded');
+    this._lastPenDownZ = penDownZ;
+    this._lastPenUpZ = penUpZ;
 
-    // ── Step A: render to low-res processing canvas ────────────────────────
-    //   We sample at (numLines * aspect) × numLines pixels.
-    //   This coarse grid naturally matches a thick marker's line width.
+    // -- A: render to low-res canvas -----------------------------------------
     const aspect = this.imageBitmap.width / this.imageBitmap.height;
     const resH = numLines;
     const resW = Math.max(8, Math.round(numLines * aspect));
@@ -71,207 +71,270 @@ export class ImagePlotter {
     pc.width  = resW;
     pc.height = resH;
     const ctx = pc.getContext('2d', { willReadFrequently: true });
-
-    // Fill white so any transparent areas are treated as blank paper
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, resW, resH);
     ctx.drawImage(this.imageBitmap, 0, 0, resW, resH);
 
     const imgData = ctx.getImageData(0, 0, resW, resH);
-    const px      = imgData.data; // RGBA flat array
+    const px = imgData.data;
 
-    // ── Step B: convert to luminance ───────────────────────────────────────
+    // -- B: perceptual grayscale (Rec.709) ------------------------------------
     const lum = new Uint8Array(resW * resH);
     for (let i = 0; i < resW * resH; i++) {
-      const r = px[i * 4];
-      const g = px[i * 4 + 1];
-      const b = px[i * 4 + 2];
-      // Perceptual luminance (Rec 709)
-      lum[i] = Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b);
+      lum[i] = Math.round(0.2126 * px[i*4] + 0.7152 * px[i*4+1] + 0.0722 * px[i*4+2]);
     }
 
-    // ── Step C: CLAHE-lite — stretch contrast per-block so bright lighting
-    //   doesn't wash out everything.  We use a global histogram stretch
-    //   (percentile clipping) which is simple, fast, and very effective.
-    const sorted  = Float32Array.from(lum).sort();
-    const clipLow  = sorted[Math.floor(sorted.length * 0.02)] || 0;
-    const clipHigh = sorted[Math.floor(sorted.length * 0.98)] || 255;
-    const range    = Math.max(1, clipHigh - clipLow);
-
+    // -- C: CLAHE-lite contrast stretch (handles bright lighting) ------------
+    const lumSorted = Float32Array.from(lum).sort();
+    const clipLow  = lumSorted[Math.floor(lumSorted.length * 0.02)] || 0;
+    const clipHigh = lumSorted[Math.floor(lumSorted.length * 0.98)] || 255;
+    const lumRange = Math.max(1, clipHigh - clipLow);
     const norm = new Uint8Array(resW * resH);
     for (let i = 0; i < lum.length; i++) {
-      norm[i] = Math.round(Math.max(0, Math.min(255, ((lum[i] - clipLow) / range) * 255)));
+      norm[i] = Math.round(Math.max(0, Math.min(255, ((lum[i] - clipLow) / lumRange) * 255)));
     }
 
-    // ── Step D: Gaussian blur (3×3) to kill single-pixel marker noise ──────
-    const blurred = new Uint8Array(resW * resH);
-    const kernel  = [1, 2, 1, 2, 4, 2, 1, 2, 1]; // unnormalised 3×3 Gaussian
-    const kSum    = 16;
-    for (let y = 0; y < resH; y++) {
-      for (let x = 0; x < resW; x++) {
-        let acc = 0;
-        let ki  = 0;
-        for (let ky = -1; ky <= 1; ky++) {
-          for (let kx = -1; kx <= 1; kx++) {
-            const sx = Math.max(0, Math.min(resW - 1, x + kx));
-            const sy = Math.max(0, Math.min(resH - 1, y + ky));
-            acc += norm[sy * resW + sx] * kernel[ki++];
-          }
-        }
-        blurred[y * resW + x] = Math.round(acc / kSum);
-      }
-    }
+    // -- D: 5x5 Gaussian blur (stronger than 3x3 to reduce noise before Sobel)
+    const blurred = this._gaussianBlur5(norm, resW, resH);
 
-    // ── Step E: binarize — per-row adaptive threshold ──────────────────────
-    //   For each row we compute the median luminance and use a weighted
-    //   combination of that median and the user-supplied global threshold.
-    //   This means a row that is overall bright (e.g. lit from the side)
-    //   will still correctly detect dark marks.
-    const binary = new Uint8Array(resW * resH); // 1 = dark (pen-down)
-    for (let y = 0; y < resH; y++) {
-      const rowPixels = [];
-      for (let x = 0; x < resW; x++) {
-        rowPixels.push(blurred[y * resW + x]);
-      }
-      rowPixels.sort((a, b) => a - b);
-      const rowMedian = rowPixels[Math.floor(rowPixels.length / 2)];
-      // Blend: 60% local median, 40% global threshold
-      const rowThreshold = Math.round(rowMedian * 0.6 + threshold * 0.4);
+    // -- E: Sobel gradient magnitude + direction -----------------------------
+    const { mag, dir } = this._sobel(blurred, resW, resH);
 
-      for (let x = 0; x < resW; x++) {
-        binary[y * resW + x] = blurred[y * resW + x] < rowThreshold ? 1 : 0;
-      }
-    }
+    // -- F: Non-maximum suppression (thin edges to 1px wide) ----------------
+    const suppressed = this._nms(mag, dir, resW, resH);
 
-    // ── Step F: build waypoints ────────────────────────────────────────────
-    //   Each scanline row maps to one Y coordinate in printer space.
-    //   Within a row, we trace contiguous dark-pixel runs as pen-down segments.
-    //   Alternate rows sweep left→right and right→left (boustrophedon) to
-    //   minimise rapid travel.
+    // -- G: Hysteresis double-threshold (Canny-style) ------------------------
+    //   highT = user threshold, lowT = 40% of that
+    const highT = Math.max(10, Math.min(255, threshold));
+    const lowT  = Math.round(highT * 0.4);
+    const edges = this._hysteresis(suppressed, resW, resH, lowT, highT);
+
+    // -- H: Trace connected 8-paths into ordered pen stroke chains -----------
+    const strokes = this._traceStrokes(edges, resW, resH);
+
+    // -- I: Map strokes to printer coordinates, build waypoints --------------
     const { centerX, centerY, workspaceWidth, workspaceHeight } = workspace;
     const minX = centerX - workspaceWidth  / 2.0;
-    const maxX = centerX + workspaceWidth  / 2.0;
     const minY = centerY - workspaceHeight / 2.0;
-    const maxY = centerY + workspaceHeight / 2.0;
+
+    const toX = (col) => minX + (col / (resW - 1)) * workspaceWidth;
+    const toY = (row) => minY + (row / (resH - 1)) * workspaceHeight;
 
     const waypoints = [];
-
-    const toX = (col, reverse) => {
-      const t = reverse ? (resW - 1 - col) / (resW - 1) : col / (resW - 1);
-      return minX + t * workspaceWidth;
-    };
-    const toY = (row) => {
-      // row 0 = top of image = higher Y in printer space (Y increases downward on the bed)
-      return minY + (row / (resH - 1)) * workspaceHeight;
-    };
-
-    for (let row = 0; row < resH; row++) {
-      const reverse = (row % 2) === 1; // boustrophedon sweep
-      const y = toY(row);
-
-      // Build ordered column sequence for this row
-      const cols = [];
-      for (let x = 0; x < resW; x++) cols.push(x);
-      if (reverse) cols.reverse();
-
-      let penDown = false;
-      for (let ci = 0; ci < cols.length; ci++) {
-        const col   = cols[ci];
-        const isDark = binary[row * resW + col] === 1;
-        const printerX = toX(col, reverse);
-
-        if (isDark && !penDown) {
-          // Lift before travel, arrive, then put pen down
-          if (waypoints.length > 0) {
-            // insert pen-up at current position before move
-            const last = waypoints[waypoints.length - 1];
-            waypoints.push({ x: last.x, y: last.y, z: penUpZ });
-          }
-          waypoints.push({ x: printerX, y, z: penUpZ }); // travel
-          waypoints.push({ x: printerX, y, z: penDownZ }); // pen down
-          penDown = true;
-        } else if (!isDark && penDown) {
-          waypoints.push({ x: printerX, y, z: penDownZ }); // end of segment
-          waypoints.push({ x: printerX, y, z: penUpZ });   // lift
-          penDown = false;
-        } else if (isDark) {
-          waypoints.push({ x: printerX, y, z: penDownZ });
-        }
+    for (const stroke of strokes) {
+      if (stroke.length === 0) continue;
+      // Travel to stroke start with pen UP
+      waypoints.push({ x: toX(stroke[0].x), y: toY(stroke[0].y), z: penUpZ });
+      // Pen DOWN at stroke start
+      waypoints.push({ x: toX(stroke[0].x), y: toY(stroke[0].y), z: penDownZ });
+      // Draw the stroke
+      for (let i = 1; i < stroke.length; i++) {
+        waypoints.push({ x: toX(stroke[i].x), y: toY(stroke[i].y), z: penDownZ });
       }
-
-      // End of row: always lift
-      if (penDown && waypoints.length > 0) {
-        const last = waypoints[waypoints.length - 1];
-        waypoints.push({ x: last.x, y: last.y, z: penUpZ });
-      }
+      // Pen UP at stroke end
+      const last = stroke[stroke.length - 1];
+      waypoints.push({ x: toX(last.x), y: toY(last.y), z: penUpZ });
     }
 
     this.waypoints = waypoints;
 
-    // ── Step G: render preview canvas ─────────────────────────────────────
     if (this.previewCanvas) {
-      this._renderPreview(binary, resW, resH, waypoints, minX, maxX, minY, maxY);
+      this._renderPreview(strokes, resW, resH);
     }
 
     return waypoints.length;
   }
 
-  // ── 3. Preview render ─────────────────────────────────────────────────────
+  // -- Internal DSP helpers --------------------------------------------------
 
-  _renderPreview(binary, resW, resH, waypoints, minX, maxX, minY, maxY) {
-    const cv  = this.previewCanvas;
-    // Make preview square-ish at 300px wide
-    const SCALE = 2;
+  _gaussianBlur5(src, w, h) {
+    // Separable 5-tap Gaussian kernel [1,4,6,4,1]/16
+    const tmp = new Float32Array(w * h);
+    const dst = new Uint8Array(w * h);
+    const k = [1, 4, 6, 4, 1];
+    const kSum = 16;
+    // Horizontal pass
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let acc = 0;
+        for (let ki = 0; ki < 5; ki++) {
+          const sx = Math.max(0, Math.min(w - 1, x + ki - 2));
+          acc += src[y * w + sx] * k[ki];
+        }
+        tmp[y * w + x] = acc / kSum;
+      }
+    }
+    // Vertical pass
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let acc = 0;
+        for (let ki = 0; ki < 5; ki++) {
+          const sy = Math.max(0, Math.min(h - 1, y + ki - 2));
+          acc += tmp[sy * w + x] * k[ki];
+        }
+        dst[y * w + x] = Math.round(acc / kSum);
+      }
+    }
+    return dst;
+  }
+
+  _sobel(src, w, h) {
+    const mag = new Float32Array(w * h);
+    const dir = new Float32Array(w * h);
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const tl = src[(y-1)*w + (x-1)], tc = src[(y-1)*w + x], tr = src[(y-1)*w + (x+1)];
+        const ml = src[    y*w + (x-1)],                         mr = src[    y*w + (x+1)];
+        const bl = src[(y+1)*w + (x-1)], bc = src[(y+1)*w + x], br = src[(y+1)*w + (x+1)];
+        const gx = -tl - 2*ml - bl + tr + 2*mr + br;
+        const gy = -tl - 2*tc - tr + bl + 2*bc + br;
+        mag[y * w + x] = Math.sqrt(gx * gx + gy * gy);
+        dir[y * w + x] = Math.atan2(gy, gx);
+      }
+    }
+    return { mag, dir };
+  }
+
+  _nms(mag, dir, w, h) {
+    // Keep a pixel only if it is a local maximum along its gradient direction
+    const out = new Float32Array(w * h);
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const angle = ((dir[y * w + x] * 180 / Math.PI) + 180) % 180;
+        let n1, n2;
+        if (angle < 22.5 || angle >= 157.5) {
+          n1 = mag[y * w + (x - 1)]; n2 = mag[y * w + (x + 1)];
+        } else if (angle < 67.5) {
+          n1 = mag[(y - 1) * w + (x + 1)]; n2 = mag[(y + 1) * w + (x - 1)];
+        } else if (angle < 112.5) {
+          n1 = mag[(y - 1) * w + x]; n2 = mag[(y + 1) * w + x];
+        } else {
+          n1 = mag[(y - 1) * w + (x - 1)]; n2 = mag[(y + 1) * w + (x + 1)];
+        }
+        const m = mag[y * w + x];
+        out[y * w + x] = (m >= n1 && m >= n2) ? m : 0;
+      }
+    }
+    return out;
+  }
+
+  _hysteresis(mag, w, h, lowT, highT) {
+    // state: 0=none, 1=weak, 2=strong
+    const state = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      if (mag[i] >= highT) state[i] = 2;
+      else if (mag[i] >= lowT) state[i] = 1;
+    }
+    // BFS: promote weak edges connected to strong edges
+    const edges    = new Uint8Array(w * h);
+    const visited  = new Uint8Array(w * h);
+    const queue    = [];
+    for (let i = 0; i < w * h; i++) {
+      if (state[i] === 2) { queue.push(i); visited[i] = 1; edges[i] = 1; }
+    }
+    const dx8 = [-1, 0, 1, -1, 1, -1, 0, 1];
+    const dy8 = [-1, -1, -1, 0, 0, 1, 1, 1];
+    let qi = 0;
+    while (qi < queue.length) {
+      const idx = queue[qi++];
+      const ex = idx % w;
+      const ey = Math.floor(idx / w);
+      for (let d = 0; d < 8; d++) {
+        const nx = ex + dx8[d];
+        const ny = ey + dy8[d];
+        if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+        const ni = ny * w + nx;
+        if (!visited[ni] && state[ni] >= 1) {
+          visited[ni] = 1; edges[ni] = 1; queue.push(ni);
+        }
+      }
+    }
+    return edges;
+  }
+
+  _traceStrokes(edges, w, h) {
+    // Follow 8-connected edge pixels into ordered stroke chains.
+    // Greedy: prefer continuing in the same direction to avoid zigzag paths.
+    const visited = new Uint8Array(w * h);
+    const strokes = [];
+    const dx8 = [-1, 0, 1, -1, 1, -1, 0, 1];
+    const dy8 = [-1, -1, -1, 0, 0, 1, 1, 1];
+
+    for (let startY = 0; startY < h; startY++) {
+      for (let startX = 0; startX < w; startX++) {
+        const si = startY * w + startX;
+        if (!edges[si] || visited[si]) continue;
+
+        const stroke = [];
+        let cx = startX, cy = startY;
+        let prevDx = 0, prevDy = 0;
+
+        while (true) {
+          const ci = cy * w + cx;
+          if (visited[ci]) break;
+          visited[ci] = 1;
+          stroke.push({ x: cx, y: cy });
+
+          // Find best unvisited 8-connected neighbour
+          let bestX = -1, bestY = -1, bestScore = -Infinity;
+          for (let d = 0; d < 8; d++) {
+            const nx = cx + dx8[d];
+            const ny = cy + dy8[d];
+            if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+            const ni = ny * w + nx;
+            if (!edges[ni] || visited[ni]) continue;
+            // Prefer direction that continues previous travel (minimises turns)
+            const score = (prevDx !== 0 || prevDy !== 0)
+              ? (dx8[d] * prevDx + dy8[d] * prevDy)
+              : 0;
+            if (score > bestScore) { bestScore = score; bestX = nx; bestY = ny; }
+          }
+
+          if (bestX === -1) break;
+          prevDx = bestX - cx;
+          prevDy = bestY - cy;
+          cx = bestX;
+          cy = bestY;
+        }
+
+        if (stroke.length >= 2) strokes.push(stroke);
+      }
+    }
+    return strokes;
+  }
+
+  // -- Preview render --------------------------------------------------------
+
+  _renderPreview(strokes, resW, resH) {
+    const cv = this.previewCanvas;
+    const SCALE = 4;
     cv.width  = resW * SCALE;
     cv.height = resH * SCALE;
     const ctx = cv.getContext('2d');
 
-    // Background
     ctx.fillStyle = '#0c0f16';
     ctx.fillRect(0, 0, cv.width, cv.height);
 
-    // Draw binary map (dark pixels = ink)
-    for (let y = 0; y < resH; y++) {
-      for (let x = 0; x < resW; x++) {
-        if (binary[y * resW + x] === 1) {
-          ctx.fillStyle = 'rgba(0, 230, 255, 0.6)';
-          ctx.fillRect(x * SCALE, y * SCALE, SCALE, SCALE);
-        }
-      }
-    }
+    // Cycle through neon colours so individual strokes are distinguishable
+    const palette = ['#39ff14', '#00e6ff', '#ff6e00', '#ff0090', '#ffe600'];
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
-    // Draw planned pen paths on top
-    const xRange = maxX - minX;
-    const yRange = maxY - minY;
-
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = '#39ff14';
-    ctx.beginPath();
-    let pathStarted = false;
-    for (const wp of waypoints) {
-      const px = ((wp.x - minX) / xRange) * cv.width;
-      const py = ((wp.y - minY) / yRange) * cv.height;
-      if (wp.z <= 5) { // pen down (approximate)
-        if (!pathStarted) { ctx.moveTo(px, py); pathStarted = true; }
-        else ctx.lineTo(px, py);
-      } else {
-        ctx.stroke();
-        ctx.beginPath();
-        pathStarted = false;
+    strokes.forEach((stroke, si) => {
+      if (stroke.length < 2) return;
+      ctx.strokeStyle = palette[si % palette.length];
+      ctx.beginPath();
+      ctx.moveTo(stroke[0].x * SCALE + SCALE / 2, stroke[0].y * SCALE + SCALE / 2);
+      for (let i = 1; i < stroke.length; i++) {
+        ctx.lineTo(stroke[i].x * SCALE + SCALE / 2, stroke[i].y * SCALE + SCALE / 2);
       }
-    }
-    ctx.stroke();
+      ctx.stroke();
+    });
   }
 
-  // ── 4. G-code streaming ───────────────────────────────────────────────────
+  // -- G-code streaming -----------------------------------------------------
 
-  /**
-   * Stream all waypoints to the printer via WebSocket.
-   * Uses a step-by-step async loop so the UI stays responsive.
-   * @param {WebSocket} socket
-   * @param {Function} onProgress  (current, total) => void
-   * @param {Function} isCancelled () => bool
-   */
   async streamToPlotter(socket, feedrateXY, feedrateZ, onProgress, isCancelled) {
     const wps = this.waypoints;
     if (!wps.length) return;
@@ -279,17 +342,18 @@ export class ImagePlotter {
     for (let i = 0; i < wps.length; i++) {
       if (isCancelled && isCancelled()) break;
       const wp = wps[i];
-      // Use 'gcode-plot:' prefix so the server queues these in order
-      // instead of overwriting them with the live hand-tracking G1 commands
-      const gcode = `G1 X${wp.x.toFixed(1)} Y${wp.y.toFixed(1)} Z${wp.z.toFixed(1)} F${feedrateXY}`;
-      socket.send(`gcode-plot:${gcode}`);
+      // Use Z feedrate for Z-only moves, XY feedrate for travel/draw
+      const isZOnly = (i > 0 &&
+        Math.abs(wps[i-1].x - wp.x) < 0.01 &&
+        Math.abs(wps[i-1].y - wp.y) < 0.01);
+      const f = isZOnly ? feedrateZ : feedrateXY;
+      socket.send(`gcode-plot:G1 X${wp.x.toFixed(1)} Y${wp.y.toFixed(1)} Z${wp.z.toFixed(1)} F${f}`);
       if (onProgress) onProgress(i + 1, wps.length);
-      // Small yield to keep browser painting and allow cancellation
       if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
     }
 
-    // Lift pen at end
+    // Final safe lift
     const last = wps[wps.length - 1];
-    socket.send(`gcode-plot:G1 X${last.x.toFixed(1)} Y${last.y.toFixed(1)} Z20 F${feedrateXY}`);
+    socket.send(`gcode-plot:G1 X${last.x.toFixed(1)} Y${last.y.toFixed(1)} Z${this._lastPenUpZ + 5} F${feedrateXY}`);
   }
 }
