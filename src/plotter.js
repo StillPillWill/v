@@ -279,8 +279,10 @@ export class ImagePlotter {
     for (let i = 0; i < wps.length; i++) {
       if (isCancelled && isCancelled()) break;
       const wp = wps[i];
+      // Use 'gcode-plot:' prefix so the server queues these in order
+      // instead of overwriting them with the live hand-tracking G1 commands
       const gcode = `G1 X${wp.x.toFixed(1)} Y${wp.y.toFixed(1)} Z${wp.z.toFixed(1)} F${feedrateXY}`;
-      socket.send(`gcode:${gcode}`);
+      socket.send(`gcode-plot:${gcode}`);
       if (onProgress) onProgress(i + 1, wps.length);
       // Small yield to keep browser painting and allow cancellation
       if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
@@ -288,6 +290,6 @@ export class ImagePlotter {
 
     // Lift pen at end
     const last = wps[wps.length - 1];
-    socket.send(`gcode:G1 X${last.x.toFixed(1)} Y${last.y.toFixed(1)} Z20 F${feedrateXY}`);
+    socket.send(`gcode-plot:G1 X${last.x.toFixed(1)} Y${last.y.toFixed(1)} Z20 F${feedrateXY}`);
   }
 }

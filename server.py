@@ -299,7 +299,7 @@ def try_connect_printer():
     return False
 
 def disconnect_printer():
-    global serial_port, printer_connected, printer_port_name, in_flight
+    global serial_port, printer_connected, printer_port_name, in_flight, serial_queue
     if serial_port and serial_port.is_open:
         try:
             serial_port.write(b"M410\n") # Quick stop
@@ -311,6 +311,9 @@ def disconnect_printer():
     printer_connected = False
     printer_port_name = None
     in_flight = 0
+    with serial_queue_cv:
+        serial_queue = []  # Flush stale plot moves
+        serial_queue_cv.notify_all()
     print("[SERIAL] Disconnected.")
 
 # --- WebSocket Client Handling ---
@@ -383,17 +386,25 @@ def handle_ws_client(conn, addr):
                     gcode = msg[6:]
                     if printer_connected:
                         if gcode.startswith("G1"):
-                            # No queuing: overwrite with the single latest command to prevent lag!
+                            # Live control: overwrite queue with latest position so there's no lag
                             with serial_queue_cv:
                                 serial_queue = [gcode]
                                 serial_queue_cv.notify()
                         else:
-                            # Send instant commands (M-codes, G28, etc) straight to port
+                            # Instant commands (M-codes, G28, etc) bypass queue
                             try:
                                 print(f"[SERIAL INSTANT] {gcode}")
                                 serial_port.write((gcode + "\n").encode('utf-8'))
                             except Exception as ex:
                                 print(f"[SERIAL INSTANT ERROR] {ex}")
+
+                elif msg.startswith("gcode-plot:"):
+                    # Plotting moves: append to queue in order so every move executes
+                    gcode = msg[11:]
+                    if printer_connected:
+                        with serial_queue_cv:
+                            serial_queue.append(gcode)
+                            serial_queue_cv.notify()
                                 
     except Exception as e:
         print(f"[WS CLIENT ERROR] {e}")

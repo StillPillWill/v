@@ -715,16 +715,19 @@ function update(time) {
     telemetryStatus.className = 'value status-badge offline';
   } else if (webcamActive && handProcessor.isTracking) {
     telemetryStatus.textContent = 'WEBCAM DRIVING';
+    telemetryStatus.className = 'value status-badge online';
     telemetryStatus.style.background = 'rgba(57, 255, 20, 0.15)';
     telemetryStatus.style.color = '#39ff14';
     telemetryStatus.style.borderColor = 'rgba(57, 255, 20, 0.3)';
   } else if (isPlayingPath) {
     telemetryStatus.textContent = 'RUNNING PLANNER';
+    telemetryStatus.className = 'value status-badge online';
     telemetryStatus.style.background = 'rgba(0, 240, 255, 0.15)';
     telemetryStatus.style.color = '#00f0ff';
     telemetryStatus.style.borderColor = 'rgba(0, 240, 255, 0.3)';
   } else {
     telemetryStatus.textContent = 'STANDBY';
+    telemetryStatus.className = 'value status-badge';
     telemetryStatus.style.background = 'rgba(16, 185, 129, 0.15)';
     telemetryStatus.style.color = '#10b981';
     telemetryStatus.style.borderColor = 'rgba(16, 185, 129, 0.3)';
@@ -794,7 +797,11 @@ function initPlotter() {
   });
 
   // ── File picker ──────────────────────────────────────────────────────────
-  d.plotterBtnFile.addEventListener('click', () => d.plotterFileInput.click());
+  d.plotterBtnFile.addEventListener('click', () => {
+    // Reset the input so the same file can be reloaded
+    d.plotterFileInput.value = '';
+    d.plotterFileInput.click();
+  });
   d.plotterFileInput.addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (file) await _plotterLoadFile(file);
@@ -808,6 +815,11 @@ function initPlotter() {
       return;
     }
     setPlotterStatus('Starting camera…');
+    // Pause webcam tracking if active to avoid camera conflict
+    if (webcamActive) {
+      dom.toggleWebcam.checked = false;
+      disableWebcamTracking();
+    }
     try {
       plotterCamStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
@@ -873,12 +885,15 @@ function initPlotter() {
       () => plotCancelled
     );
 
+    // Only show completion if we weren't manually cancelled
     plottingActive = false;
-    plotCancelled  = false;
     d.plotterBtnPlot.textContent = '▶ Start Plotting';
     d.plotterBtnPlot.classList.remove('btn-danger');
     d.plotterBtnPlot.classList.add('btn-success');
-    setPlotterStatus('✅ Plotting complete!');
+    if (!plotCancelled) {
+      setPlotterStatus('✅ Plotting complete!');
+    }
+    plotCancelled = false;
   });
 }
 
