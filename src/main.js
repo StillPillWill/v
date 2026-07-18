@@ -96,6 +96,7 @@ const dom = {
   plotterThreshold:  document.getElementById('plotter-threshold'),
   plotterMinStroke:  document.getElementById('plotter-min-stroke'),
   plotterSimplification: document.getElementById('plotter-simplification'),
+  plotterMergeGap:   document.getElementById('plotter-merge-gap'),
   plotterStatus:     document.getElementById('plotter-status'),
   plotterBtnProcess: document.getElementById('btn-plotter-process'),
   plotterBtnPlot:    document.getElementById('btn-plotter-plot'),
@@ -860,6 +861,9 @@ function initPlotter() {
   if (d.plotterSimplification) {
     d.plotterSimplification.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
   }
+  if (d.plotterMergeGap) {
+    d.plotterMergeGap.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+  }
 
   // ── Plot ─────────────────────────────────────────────────────────────────
   d.plotterBtnPlot.addEventListener('click', async () => {
@@ -950,8 +954,9 @@ function _plotterRunProcess() {
   try {
     const numLines  = parseInt(dom.plotterLines.value, 10)    || 160;
     const threshold = parseInt(dom.plotterThreshold.value, 10) || 30;
-    const minStroke = parseInt(dom.plotterMinStroke?.value, 10) || 4;
+    const minStroke = parseInt(dom.plotterMinStroke?.value, 10) || 8;
     const simplification = parseFloat(dom.plotterSimplification?.value) || 1.5;
+    const mergeGapMM = parseFloat(dom.plotterMergeGap?.value) || 4.0;
 
     // Grab current workspace dimensions from inputs (fall back to handProcessor fields)
     const wW = parseFloat(dom.workspaceWidthInput?.value)  || handProcessor.workspaceWidth  || 200;
@@ -965,7 +970,7 @@ function _plotterRunProcess() {
     };
 
     const count = imagePlotter.process(
-      numLines, threshold, minStroke, simplification, workspace, penDownZ, penUpZ
+      numLines, threshold, minStroke, simplification, mergeGapMM, workspace, penDownZ, penUpZ
     );
 
     // Show preview

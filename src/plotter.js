@@ -74,11 +74,12 @@ export class ImagePlotter {
    * @param {number} threshold  — XDoG edge threshold; lower = more edges (1–50)
    * @param {number} minStroke  — minimum stroke length in pixels to keep (2–20)
    * @param {number} simplification — Douglas-Peucker epsilon tolerance (0.1–10.0)
+   * @param {number} mergeGapMM — maximum physical gap in mm to bridge without lifting the pen (0.0-20.0)
    * @param {object} workspace
    * @param {number} penDownZ
    * @param {number} penUpZ
    */
-  process(resolution, threshold, minStroke, simplification, workspace, penDownZ, penUpZ) {
+  process(resolution, threshold, minStroke, simplification, mergeGapMM, workspace, penDownZ, penUpZ) {
     if (!this.imageBitmap) throw new Error('No image loaded');
     this._lastPenUpZ = penUpZ;
 
@@ -132,15 +133,52 @@ export class ImagePlotter {
     const toY  = row => minY + (row / (resH - 1)) * workspaceHeight;
 
     const waypoints = [];
+    let penDown = false;
+    let lastWp = null;
+
     for (const stroke of sorted) {
       if (!stroke || stroke.length < 2) continue;
-      waypoints.push({ x: toX(stroke[0].x), y: toY(stroke[0].y), z: penUpZ   });
-      waypoints.push({ x: toX(stroke[0].x), y: toY(stroke[0].y), z: penDownZ });
+
+      const startPt = { x: toX(stroke[0].x), y: toY(stroke[0].y) };
+
+      // Check if the gap from the end of the previous stroke is small enough to bridge
+      let bridge = false;
+      if (penDown && lastWp) {
+        const dist = Math.hypot(startPt.x - lastWp.x, startPt.y - lastWp.y);
+        if (dist <= mergeGapMM) {
+          bridge = true;
+        }
+      }
+
+      if (bridge) {
+        // Draw a straight line to the start of this stroke (pen stays DOWN)
+        waypoints.push({ x: startPt.x, y: startPt.y, z: penDownZ });
+      } else {
+        // If pen was down, lift it first
+        if (penDown && lastWp) {
+          waypoints.push({ x: lastWp.x, y: lastWp.y, z: penUpZ });
+          penDown = false;
+        }
+        // Travel to stroke start (pen UP)
+        waypoints.push({ x: startPt.x, y: startPt.y, z: penUpZ });
+        // Drop pen at start of this stroke
+        waypoints.push({ x: startPt.x, y: startPt.y, z: penDownZ });
+        penDown = true;
+      }
+
+      // Draw the stroke
       for (let i = 1; i < stroke.length; i++) {
         waypoints.push({ x: toX(stroke[i].x), y: toY(stroke[i].y), z: penDownZ });
       }
-      const last = stroke[stroke.length - 1];
-      waypoints.push({ x: toX(last.x), y: toY(last.y), z: penUpZ });
+
+      // Record the last point of this stroke
+      const lastStrokePt = stroke[stroke.length - 1];
+      lastWp = { x: toX(lastStrokePt.x), y: toY(lastStrokePt.y) };
+    }
+
+    // Final lift
+    if (penDown && lastWp) {
+      waypoints.push({ x: lastWp.x, y: lastWp.y, z: penUpZ });
     }
 
     this.waypoints = waypoints;
