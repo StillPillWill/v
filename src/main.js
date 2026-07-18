@@ -94,9 +94,13 @@ const dom = {
   plotterPreview:    document.getElementById('plotter-preview'),
   plotterLines:      document.getElementById('plotter-lines'),
   plotterThreshold:  document.getElementById('plotter-threshold'),
+  plotterMinStroke:  document.getElementById('plotter-min-stroke'),
   plotterStatus:     document.getElementById('plotter-status'),
   plotterBtnProcess: document.getElementById('btn-plotter-process'),
-  plotterBtnPlot:    document.getElementById('btn-plotter-plot')
+  plotterBtnPlot:    document.getElementById('btn-plotter-plot'),
+  plotterBtnPause:   document.getElementById('btn-plotter-pause'),
+  plotterBtnStop:    document.getElementById('btn-plotter-stop'),
+  plotterActiveControls: document.getElementById('plotter-active-controls')
 };
 
 // --- WebSocket Management ---
@@ -849,19 +853,12 @@ function initPlotter() {
   // Re-process live when sliders change
   d.plotterLines.addEventListener('change',     () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
   d.plotterThreshold.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+  if (d.plotterMinStroke) {
+    d.plotterMinStroke.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+  }
 
   // ── Plot ─────────────────────────────────────────────────────────────────
   d.plotterBtnPlot.addEventListener('click', async () => {
-    if (plottingActive) {
-      // Cancel
-      plotCancelled = true;
-      d.plotterBtnPlot.textContent = '▶ Start Plotting';
-      d.plotterBtnPlot.classList.remove('btn-danger');
-      d.plotterBtnPlot.classList.add('btn-success');
-      plottingActive = false;
-      setPlotterStatus('Plotting cancelled.');
-      return;
-    }
     if (!imagePlotter.waypoints.length) {
       setPlotterStatus('Process the image first.');
       return;
@@ -872,9 +869,11 @@ function initPlotter() {
     }
     plottingActive = true;
     plotCancelled  = false;
-    d.plotterBtnPlot.textContent = '⏹ Cancel Plot';
-    d.plotterBtnPlot.classList.remove('btn-success');
-    d.plotterBtnPlot.classList.add('btn-danger');
+    
+    // Switch to active controls
+    d.plotterBtnPlot.style.display = 'none';
+    d.plotterActiveControls.style.display = 'flex';
+    d.plotterBtnPause.textContent = '⏸ Pause';
     setPlotterStatus('Plotting…');
 
     await imagePlotter.streamToPlotter(
@@ -885,15 +884,33 @@ function initPlotter() {
       () => plotCancelled
     );
 
-    // Only show completion if we weren't manually cancelled
+    // Switch back to idle control
+    d.plotterBtnPlot.style.display = 'block';
+    d.plotterActiveControls.style.display = 'none';
+
     plottingActive = false;
-    d.plotterBtnPlot.textContent = '▶ Start Plotting';
-    d.plotterBtnPlot.classList.remove('btn-danger');
-    d.plotterBtnPlot.classList.add('btn-success');
     if (!plotCancelled) {
       setPlotterStatus('✅ Plotting complete!');
     }
     plotCancelled = false;
+  });
+
+  d.plotterBtnPause.addEventListener('click', () => {
+    if (imagePlotter._paused) {
+      imagePlotter.resume();
+      d.plotterBtnPause.textContent = '⏸ Pause';
+      setPlotterStatus('Plotting resumed…');
+    } else {
+      imagePlotter.pause();
+      d.plotterBtnPause.textContent = '▶ Resume';
+      setPlotterStatus('Plotting paused.');
+    }
+  });
+
+  d.plotterBtnStop.addEventListener('click', () => {
+    plotCancelled = true;
+    imagePlotter.stop();
+    setPlotterStatus('Plotting stopped.');
   });
 }
 
@@ -927,8 +944,9 @@ function _plotterImageReady() {
 function _plotterRunProcess() {
   setPlotterStatus('Processing…');
   try {
-    const numLines  = parseInt(dom.plotterLines.value, 10)    || 40;
-    const threshold = parseInt(dom.plotterThreshold.value, 10) || 128;
+    const numLines  = parseInt(dom.plotterLines.value, 10)    || 160;
+    const threshold = parseInt(dom.plotterThreshold.value, 10) || 30;
+    const minStroke = parseInt(dom.plotterMinStroke?.value, 10) || 4;
 
     // Grab current workspace dimensions from inputs (fall back to handProcessor fields)
     const wW = parseFloat(dom.workspaceWidthInput?.value)  || handProcessor.workspaceWidth  || 200;
@@ -942,7 +960,7 @@ function _plotterRunProcess() {
     };
 
     const count = imagePlotter.process(
-      numLines, threshold, workspace, penDownZ, penUpZ
+      numLines, threshold, minStroke, workspace, penDownZ, penUpZ
     );
 
     // Show preview
