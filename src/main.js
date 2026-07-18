@@ -661,9 +661,13 @@ function onHandResults(results) {
   if (!ctx) return;
 
   const video = dom.webcamVideo;
-  if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+  if (video.videoWidth > 0 && video.videoHeight > 0) {
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    }
+  } else {
+    return;
   }
 
   const timestamp = performance.now();
