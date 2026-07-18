@@ -80,12 +80,27 @@ export class HandTrackingProcessor {
     const handCenterX = sumX / centerIndices.length;
     const handCenterY = sumY / centerIndices.length;
 
-    // --- Map coordinates directly from video frame ---
-    // User's Left/Right hand movement in frame -> Printer X [192, 392] mm
-    const rawTargetX = 192.0 + (1.0 - handCenterX) * 200.0;
+    // --- Map coordinates with an acceleration power curve relative to frame center ---
+    // Normalized offset from frame center (-0.5 to +0.5)
+    const nx = (1.0 - handCenterX) - 0.5;
+    const ny = (1.0 - handCenterY) - 0.5;
+    
+    // Scale to range [-1.0, 1.0] for exponentiation
+    const nxNorm = nx * 2.0;
+    const nyNorm = ny * 2.0;
+    
+    // Apply power exponent (1.4) to create precision deadzone near center and rapid acceleration near edges
+    const powerExponent = 1.4;
+    const nxCurve = Math.sign(nxNorm) * Math.pow(Math.abs(nxNorm), powerExponent);
+    const nyCurve = Math.sign(nyNorm) * Math.pow(Math.abs(nyNorm), powerExponent);
+    
+    // Scale back to range [0.0, 1.0]
+    const targetNx = (nxCurve / 2.0) + 0.5;
+    const targetNy = (nyCurve / 2.0) + 0.5;
 
-    // User's Up/Down hand movement in frame -> Printer Y [287, 487] mm
-    const rawTargetY = 287.0 + (1.0 - handCenterY) * 200.0;
+    // Map to physical printer workspace (200x200mm bounded area)
+    const rawTargetX = 192.0 + targetNx * 200.0;
+    const rawTargetY = 287.0 + targetNy * 200.0;
 
     // Dummy Z (actual Z is driven by fistClosed binary check in main.js)
     const rawTargetZ = 15.0;

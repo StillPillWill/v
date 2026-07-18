@@ -632,7 +632,23 @@ function update(time) {
 
   // 2. Webcam Coordinate Smoothing
   if (webcamActive && handProcessor.isTracking) {
-    const k_pos = 4.5;
+    // Distance between current target and new tracked target
+    const dx = webcamTargetX - targetX;
+    const dy = webcamTargetY - targetY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    
+    // Dynamic smoothing factor based on target distance (adaptive jitter filter)
+    let k_pos = 4.5;
+    if (dist < 1.5) {
+      // Micro-tremors / static hand jitter (under 1.5mm deviation): freeze movement almost completely
+      k_pos = 0.25;
+    } else if (dist < 6.0) {
+      // Precision drawing speeds: moderate smoothing
+      k_pos = 1.0 + (dist - 1.5) * (3.5 / 4.5); // interpolates smoothly from 1.0 to 4.5
+    } else {
+      // Quick travel / strokes (intentional movement): high responsiveness
+      k_pos = 6.5;
+    }
     
     targetX += (webcamTargetX - targetX) * (1 - Math.exp(-k_pos * dt));
     targetY += (webcamTargetY - targetY) * (1 - Math.exp(-k_pos * dt));
