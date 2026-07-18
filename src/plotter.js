@@ -181,6 +181,15 @@ export class ImagePlotter {
       waypoints.push({ x: lastWp.x, y: lastWp.y, z: penUpZ });
     }
 
+    this.resW = resW;
+    this.resH = resH;
+    this.strokes = sorted;
+    this.minX = minX;
+    this.minY = minY;
+    this.wW = workspaceWidth;
+    this.wH = workspaceHeight;
+    this._lastPenDownZ = penDownZ;
+
     this.waypoints = waypoints;
     if (this.previewCanvas) this._renderPreview(sorted, resW, resH);
     return waypoints.length;
@@ -405,6 +414,89 @@ export class ImagePlotter {
     }
   }
 
+  renderLivePosition(currentWpIndex) {
+    if (!this.previewCanvas || !this.strokes) return;
+    const cv = this.previewCanvas;
+    const ctx = cv.getContext('2d');
+    const w = this.resW, h = this.resH;
+    const maxDim = 500, SCALE = Math.max(1, Math.floor(Math.min(maxDim/w, maxDim/h)));
+
+    ctx.fillStyle = '#f5f0e8';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    // 1. Draw light grey phantom strokes (what needs to be drawn)
+    ctx.lineWidth = Math.max(1, SCALE * 0.5);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(26, 26, 46, 0.12)';
+    for (const stroke of this.strokes) {
+      if (!stroke || stroke.length < 2) continue;
+      ctx.beginPath();
+      ctx.moveTo(stroke[0].x * SCALE + SCALE/2, stroke[0].y * SCALE + SCALE/2);
+      for (let i = 1; i < stroke.length; i++) {
+        ctx.lineTo(stroke[i].x * SCALE + SCALE/2, stroke[i].y * SCALE + SCALE/2);
+      }
+      ctx.stroke();
+    }
+
+    // 2. Draw what was drawn so far in black
+    const wps = this.waypoints;
+    ctx.strokeStyle = '#1a1a2e';
+    ctx.lineWidth = Math.max(1.5, SCALE * 0.6);
+    
+    let pathStarted = false;
+    const minX = this.minX, minY = this.minY;
+    const wW = this.wW, wH = this.wH;
+
+    const map = (wp) => {
+      const col = ((wp.x - minX) / wW) * (w - 1);
+      const row = ((wp.y - minY) / wH) * (h - 1);
+      return { x: col * SCALE + SCALE/2, y: row * SCALE + SCALE/2 };
+    };
+
+    for (let i = 0; i <= currentWpIndex && i < wps.length; i++) {
+      const wp = wps[i];
+      const pt = map(wp);
+      if (wp.z <= this._lastPenDownZ + 0.1) {
+        if (!pathStarted) {
+          ctx.beginPath();
+          ctx.moveTo(pt.x, pt.y);
+          pathStarted = true;
+        } else {
+          ctx.lineTo(pt.x, pt.y);
+        }
+      } else {
+        if (pathStarted) {
+          ctx.stroke();
+          pathStarted = false;
+        }
+      }
+    }
+    if (pathStarted) ctx.stroke();
+
+    // 3. Draw crosshair cursor at current location
+    if (currentWpIndex >= 0 && currentWpIndex < wps.length) {
+      const curWp = wps[currentWpIndex];
+      const pt = map(curWp);
+      const penDown = curWp.z <= this._lastPenDownZ + 0.1;
+      const color = penDown ? '#ff0055' : '#00bfff';
+
+      // Ring
+      const pulse = 6 + Math.sin(performance.now() / 80) * 1.5;
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, pulse, 0, 2 * Math.PI);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Dot
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 2, 0, 2 * Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+  }
+
   // ── G-code streaming with pause/resume/stop ───────────────────────────────
 
   async streamToPlotter(socket, feedrateXY, feedrateZ, onProgress, isCancelled) {
@@ -428,7 +520,7 @@ export class ImagePlotter {
         Math.abs(wps[i-1].y - wp.y) < 0.01;
       const f = isZOnly ? feedrateZ : feedrateXY;
       socket.send(`gcode-plot:G1 X${wp.x.toFixed(1)} Y${wp.y.toFixed(1)} Z${wp.z.toFixed(1)} F${f}`);
-      if (onProgress) onProgress(i+1, wps.length);
+      if (onProgress) onProgress(i + 1, wps.length, i);
       if (i % 5 === 0) await new Promise(r => setTimeout(r, 0));
     }
 

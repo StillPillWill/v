@@ -102,7 +102,12 @@ const dom = {
   plotterBtnPlot:    document.getElementById('btn-plotter-plot'),
   plotterBtnPause:   document.getElementById('btn-plotter-pause'),
   plotterBtnStop:    document.getElementById('btn-plotter-stop'),
-  plotterActiveControls: document.getElementById('plotter-active-controls')
+  plotterActiveControls: document.getElementById('plotter-active-controls'),
+  plotterProgressContainer: document.getElementById('plotter-progress-container'),
+  plotterProgressPct: document.getElementById('plotter-progress-pct'),
+  plotterProgressEta: document.getElementById('plotter-progress-eta'),
+  plotterProgressBar: document.getElementById('plotter-progress-bar'),
+  plotterProgressCounts: document.getElementById('plotter-progress-counts')
 };
 
 // --- WebSocket Management ---
@@ -884,21 +889,58 @@ function initPlotter() {
     d.plotterBtnPause.textContent = '⏸ Pause';
     setPlotterStatus('Plotting…');
 
+    // Show and reset progress display
+    let startTime = performance.now();
+    d.plotterProgressContainer.style.display = 'flex';
+    d.plotterProgressPct.textContent = '0%';
+    d.plotterProgressBar.style.width = '0%';
+    d.plotterProgressEta.textContent = 'ETA: Calculating...';
+    d.plotterProgressCounts.textContent = `0 / ${imagePlotter.waypoints.length} moves`;
+
     await imagePlotter.streamToPlotter(
       socket,
       /* feedrateXY */ 6000,
       /* feedrateZ  */ 1000,
-      (cur, tot) => setPlotterStatus(`Plotting… ${cur}/${tot} moves (${Math.round(cur/tot*100)}%)`),
+      (cur, tot, idx) => {
+        setPlotterStatus(`Plotting… ${cur}/${tot} moves (${Math.round(cur/tot*100)}%)`);
+        
+        // Update progress bar
+        const pct = Math.round((cur / tot) * 100);
+        d.plotterProgressPct.textContent = `${pct}%`;
+        d.plotterProgressBar.style.width = `${pct}%`;
+        d.plotterProgressCounts.textContent = `${cur} / ${tot} moves`;
+
+        // Calculate running ETA
+        if (!imagePlotter._paused) {
+          const now = performance.now();
+          const elapsedSec = (now - startTime) / 1000;
+          if (cur > 5 && elapsedSec > 1) {
+            const secPerWp = elapsedSec / cur;
+            const remainingSec = Math.round(secPerWp * (tot - cur));
+            const m = Math.floor(remainingSec / 60);
+            const s = remainingSec % 60;
+            d.plotterProgressEta.textContent = `ETA: ${m}:${s < 10 ? '0' : ''}${s}`;
+          }
+        } else {
+          d.plotterProgressEta.textContent = 'ETA: Paused';
+        }
+
+        // Render live pen cursor position on the preview canvas
+        imagePlotter.renderLivePosition(idx);
+      },
       () => plotCancelled
     );
 
     // Switch back to idle control
     d.plotterBtnPlot.style.display = 'block';
     d.plotterActiveControls.style.display = 'none';
+    d.plotterProgressContainer.style.display = 'none';
 
     plottingActive = false;
     if (!plotCancelled) {
       setPlotterStatus('✅ Plotting complete!');
+      // Force draw final frame with cursor at end
+      imagePlotter.renderLivePosition(imagePlotter.waypoints.length - 1);
     }
     plotCancelled = false;
   });
@@ -912,6 +954,7 @@ function initPlotter() {
       imagePlotter.pause();
       d.plotterBtnPause.textContent = '▶ Resume';
       setPlotterStatus('Plotting paused.');
+      d.plotterProgressEta.textContent = 'ETA: Paused';
     }
   });
 
