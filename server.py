@@ -286,7 +286,11 @@ def try_connect_printer():
                 serial_port.write(b"M204 P3000 T3000\n")
                 time.sleep(0.1)
                 serial_port.write(b"G28\n")  # Home
-                print(f"[SERIAL] Connected successfully, boosted acceleration, and sent G28 homing to {printer_port_name}.")
+                time.sleep(0.2)
+                # Disable Z software endstops to allow negative Z calibration offsets
+                serial_port.write(b"M211 S0\n")
+                time.sleep(0.1)
+                print(f"[SERIAL] Connected, homed, disabled Z endstops, and boosted speeds on {printer_port_name}.")
             except Exception as ex:
                 print(f"[SERIAL ERROR] Failed to send initialization gcode: {ex}")
             return True
