@@ -180,12 +180,22 @@ def try_connect_printer():
     ports = [p.device for p in serial.tools.list_ports.comports()]
     print(f"[SERIAL] Scanning COM ports: {ports}")
     
-    # Check preferred ports first (highest priority COM13)
-    preferred = ['COM13', 'COM5', 'COM3', 'COM4']
-    for p in reversed(preferred):
-        if p in ports:
-            ports.remove(p)
-            ports.insert(0, p)
+    # Check preferred ports first (highest priority USB serials on Windows/Mac/Linux)
+    preferred_keywords = ['usbserial', 'usbmodem', 'ttyusb', 'ttyacm', 'com13', 'com5']
+    preferred_ports = []
+    other_ports = []
+    for port in ports:
+        is_preferred = False
+        for kw in preferred_keywords:
+            if kw in port.lower():
+                is_preferred = True
+                break
+        if is_preferred:
+            preferred_ports.append(port)
+        else:
+            other_ports.append(port)
+            
+    ports = preferred_ports + other_ports
             
     bauds = [115200, 250000]
     
@@ -225,9 +235,15 @@ def try_connect_printer():
                     printer_connected = True
                     break
                 
-                # Fallback: If it's COM13 or COM5 and opened successfully but didn't respond to query,
+                # Fallback: If it's a USB serial port and opened successfully but timed out,
                 # we force connect to it anyway because USB serial converters are almost always the target printer.
-                if port in ['COM13', 'COM5']:
+                is_usb_serial = False
+                for kw in ['usbserial', 'usbmodem', 'ttyusb', 'ttyacm', 'com13', 'com5']:
+                    if kw in port.lower():
+                        is_usb_serial = True
+                        break
+                        
+                if is_usb_serial:
                     print(f"[SERIAL] Warning: {port} opened successfully but query timed out. Force connecting as fallback...")
                     serial_port = s
                     printer_port_name = port
