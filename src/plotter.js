@@ -276,7 +276,6 @@ export class ImagePlotter {
       while(true){
         const ci=cy*w+cx; if(visited[ci]) break;
         visited[ci]=1; stroke.push({x:cx,y:cy});
-        if(stroke.length>1 && degree[ci]>=3) break;
         let bestX=-1,bestY=-1,bestScore=-Infinity;
         for(let d=0;d<8;d++){
           const nx=cx+dx8[d],ny=cy+dy8[d];
