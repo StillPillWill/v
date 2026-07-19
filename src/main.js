@@ -1,6 +1,6 @@
 import { HandTrackingProcessor } from './handTracker.js';
 import { Vec3, AlphaBetaEstimator, MotionShaper } from './webSerialController.js';
-import { ImagePlotter } from './plotter.js';
+import { ImagePlotter, GenerativePlotter } from './plotter.js';
 
 // --- Telemetry and Control State ---
 let controlMode = 'kinematic'; // 'kinematic', 'planner'
@@ -109,7 +109,26 @@ const dom = {
   plotterProgressPct: document.getElementById('plotter-progress-pct'),
   plotterProgressEta: document.getElementById('plotter-progress-eta'),
   plotterProgressBar: document.getElementById('plotter-progress-bar'),
-  plotterProgressCounts: document.getElementById('plotter-progress-counts')
+  plotterProgressCounts: document.getElementById('plotter-progress-counts'),
+
+  // Generative Art
+  generativePreview: document.getElementById('generative-preview'),
+  genPatternType: document.getElementById('gen-pattern-type'),
+  genP1: document.getElementById('gen-p1'),
+  genP2: document.getElementById('gen-p2'),
+  lblGenP1: document.getElementById('lbl-gen-p1'),
+  lblGenP2: document.getElementById('lbl-gen-p2'),
+  generativeStatus: document.getElementById('generative-status'),
+  btnGenerativeGenerate: document.getElementById('btn-generative-generate'),
+  btnGenerativePlot: document.getElementById('btn-generative-plot'),
+  generativeActiveControls: document.getElementById('generative-active-controls'),
+  btnGenerativePause: document.getElementById('btn-generative-pause'),
+  btnGenerativeStop: document.getElementById('btn-generative-stop'),
+  generativeProgressContainer: document.getElementById('generative-progress-container'),
+  generativeProgressPct: document.getElementById('generative-progress-pct'),
+  generativeProgressEta: document.getElementById('generative-progress-eta'),
+  generativeProgressBar: document.getElementById('generative-progress-bar'),
+  generativeProgressCounts: document.getElementById('generative-progress-counts')
 };
 
 // --- WebSocket Management ---
@@ -147,6 +166,10 @@ function connectWebSocket() {
     } else if (data === "gcode-ok") {
       if (imagePlotter && imagePlotter._pendingOkResolvers && imagePlotter._pendingOkResolvers.length > 0) {
         const resolve = imagePlotter._pendingOkResolvers.shift();
+        if (resolve) resolve();
+      }
+      if (generativePlotter && generativePlotter._pendingOkResolvers && generativePlotter._pendingOkResolvers.length > 0) {
+        const resolve = generativePlotter._pendingOkResolvers.shift();
         if (resolve) resolve();
       }
     }
@@ -780,6 +803,7 @@ function update(time) {
 
 // ─── Image Plotter state (must be declared before initPlotter() is called) ───
 const imagePlotter = new ImagePlotter();
+const generativePlotter = new GenerativePlotter();
 let plotterCamStream = null;
 let plottingActive  = false;
 let plotCancelled   = false;
@@ -787,6 +811,7 @@ let plotCancelled   = false;
 // --- Initialize App ---
 initEvents();
 initPlotter();
+initGenerative();
 connectWebSocket();
 requestAnimationFrame(update);
 console.log("Nexus-4 Printer Controller Initialized.");
@@ -1043,4 +1068,177 @@ function _plotterRunProcess() {
 
 function setPlotterStatus(msg) {
   if (dom.plotterStatus) dom.plotterStatus.textContent = msg;
+}
+
+// ─── Generative Math Art UI ──────────────────────────────────────────────────
+
+function initGenerative() {
+  const d = dom;
+  if (!d.generativePreview) return;
+  
+  generativePlotter.previewCanvas = d.generativePreview;
+
+  // Change parameters labels/values based on selected math pattern
+  const setParams = (lbl1, val1, lbl2, val2) => {
+    d.lblGenP1.textContent = lbl1;
+    d.genP1.value = val1;
+    d.lblGenP2.textContent = lbl2;
+    d.genP2.value = val2;
+  };
+
+  d.genPatternType.addEventListener('change', () => {
+    const type = d.genPatternType.value;
+    if (type === 'archimedean' || type === 'fermat') {
+      setParams('Density (Revs)', 20, 'Scale (Radius mm)', 90);
+    } else if (type === 'spirograph') {
+      setParams('Inner Gear Rad (mm)', 52, 'Pen Offset (mm)', 38);
+    } else if (type === 'rose') {
+      setParams('Petal Count (n)', 5, 'Scale (Radius mm)', 90);
+    } else if (type === 'lissajous') {
+      setParams('X Frequency', 3, 'Y Frequency', 4);
+    }
+    _generativeRunGenerate();
+  });
+
+  // Re-generate preview dynamically when parameters change
+  d.genP1.addEventListener('input', _generativeRunGenerate);
+  d.genP2.addEventListener('input', _generativeRunGenerate);
+  d.genP1.addEventListener('change', _generativeRunGenerate);
+  d.genP2.addEventListener('change', _generativeRunGenerate);
+
+  // Generate button
+  d.btnGenerativeGenerate.addEventListener('click', () => {
+    _generativeRunGenerate();
+  });
+
+  // Plot Button
+  d.btnGenerativePlot.addEventListener('click', async () => {
+    if (!generativePlotter.waypoints.length) {
+      d.generativeStatus.textContent = 'Generate art first.';
+      return;
+    }
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      d.generativeStatus.textContent = '⚠ WebSocket not connected.';
+      return;
+    }
+
+    plottingActive = true;
+    plotCancelled = false;
+
+    // Switch to active controls
+    d.btnGenerativePlot.style.display = 'none';
+    d.generativeActiveControls.style.display = 'flex';
+    d.btnGenerativePause.textContent = '⏸ Pause';
+    d.generativeStatus.textContent = 'Plotting mathematical art...';
+
+    // Show and reset progress display
+    let startTime = performance.now();
+    d.generativeProgressContainer.style.display = 'flex';
+    d.generativeProgressPct.textContent = '0%';
+    d.generativeProgressBar.style.width = '0%';
+    d.generativeProgressEta.textContent = 'ETA: Calculating...';
+    d.generativeProgressCounts.textContent = `0 / ${generativePlotter.waypoints.length} moves`;
+
+    const wW = parseFloat(dom.workspaceWidthInput?.value) || 200;
+    const wH = parseFloat(dom.workspaceHeightInput?.value) || 200;
+    const workspace = {
+      centerX: handProcessor.centerX,
+      centerY: handProcessor.centerY,
+      workspaceWidth: wW,
+      workspaceHeight: wH
+    };
+
+    await generativePlotter.streamToPlotter(
+      socket,
+      /* feedrateXY */ 7500, // Faster print speed for clean generator vectors
+      /* feedrateZ  */ 1200,
+      (cur, tot, idx) => {
+        d.generativeStatus.textContent = `Drawing... ${cur}/${tot} points (${Math.round(cur/tot*100)}%)`;
+        
+        const pct = Math.round((cur / tot) * 100);
+        d.generativeProgressPct.textContent = `${pct}%`;
+        d.generativeProgressBar.style.width = `${pct}%`;
+        d.generativeProgressCounts.textContent = `${cur} / ${tot} moves`;
+
+        if (!generativePlotter._paused) {
+          const now = performance.now();
+          const elapsedSec = (now - startTime) / 1000;
+          if (cur > 5 && elapsedSec > 1) {
+            const secPerWp = elapsedSec / cur;
+            const remainingSec = Math.round(secPerWp * (tot - cur));
+            const m = Math.floor(remainingSec / 60);
+            const s = remainingSec % 60;
+            d.generativeProgressEta.textContent = `ETA: ${m}:${s < 10 ? '0' : ''}${s}`;
+          }
+        } else {
+          d.generativeProgressEta.textContent = 'ETA: Paused';
+        }
+
+        // Live cursor position on the math art canvas
+        generativePlotter.renderLivePosition(idx, workspace);
+      },
+      () => plotCancelled
+    );
+
+    // Switch back to idle controls
+    d.btnGenerativePlot.style.display = 'block';
+    d.generativeActiveControls.style.display = 'none';
+    d.generativeProgressContainer.style.display = 'none';
+
+    plottingActive = false;
+    if (!plotCancelled) {
+      d.generativeStatus.textContent = '✅ Mathematical plotting complete!';
+      generativePlotter.renderLivePosition(generativePlotter.waypoints.length - 1, workspace);
+    }
+    plotCancelled = false;
+  });
+
+  d.btnGenerativePause.addEventListener('click', () => {
+    if (generativePlotter._paused) {
+      generativePlotter.resume();
+      d.btnGenerativePause.textContent = '⏸ Pause';
+      d.generativeStatus.textContent = 'Plotting resumed...';
+    } else {
+      generativePlotter.pause();
+      d.btnGenerativePause.textContent = '▶ Resume';
+      d.generativeStatus.textContent = 'Plotting paused.';
+      d.generativeProgressEta.textContent = 'ETA: Paused';
+    }
+  });
+
+  d.btnGenerativeStop.addEventListener('click', () => {
+    plotCancelled = true;
+    generativePlotter.stop();
+    d.generativeStatus.textContent = 'Plotting stopped.';
+  });
+
+  // Pre-generate a default pattern on load
+  _generativeRunGenerate();
+}
+
+function _generativeRunGenerate() {
+  const status = dom.generativeStatus;
+  if (!status) return;
+  status.textContent = 'Generating...';
+  try {
+    const type = dom.genPatternType.value;
+    const p1 = parseFloat(dom.genP1.value) || 1;
+    const p2 = parseFloat(dom.genP2.value) || 1;
+
+    const wW = parseFloat(dom.workspaceWidthInput?.value) || 200;
+    const wH = parseFloat(dom.workspaceHeightInput?.value) || 200;
+    const workspace = {
+      centerX: handProcessor.centerX,
+      centerY: handProcessor.centerY,
+      workspaceWidth: wW,
+      workspaceHeight: wH
+    };
+
+    const count = generativePlotter.generate(type, p1, p2, workspace, penDownZ, penUpZ);
+    dom.btnGenerativePlot.disabled = false;
+    status.textContent = `Generated: ${count} coordinates ready.`;
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    console.error(e);
+  }
 }

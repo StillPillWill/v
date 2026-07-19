@@ -606,3 +606,311 @@ export class ImagePlotter {
     socket.send(`gcode-plot:G1 X${last.x.toFixed(1)} Y${last.y.toFixed(1)} Z${this._lastPenUpZ+5} F${feedrateXY}`);
   }
 }
+
+export class GenerativePlotter {
+  constructor() {
+    this.waypoints = [];
+    this.previewCanvas = null;
+    this._paused = false;
+    this._stopped = false;
+    this._resumeResolve = null;
+    this._pendingOkResolvers = [];
+    this._lastPenUpZ = 15;
+    this._lastPenDownZ = 0;
+    this.strokes = [];
+  }
+
+  pause()  { this._paused = true; }
+  resume() {
+    this._paused = false;
+    if (this._resumeResolve) { this._resumeResolve(); this._resumeResolve = null; }
+  }
+  stop()   { 
+    this._stopped = true; 
+    this.resume(); 
+    const resolvers = this._pendingOkResolvers;
+    this._pendingOkResolvers = [];
+    for (const r of resolvers) r();
+  }
+
+  generate(patternType, p1, p2, workspace, penDownZ, penUpZ) {
+    this._lastPenUpZ = penUpZ;
+    this._lastPenDownZ = penDownZ;
+    this.strokes = [];
+    
+    const { centerX, centerY, workspaceWidth, workspaceHeight } = workspace;
+    const maxR = Math.min(workspaceWidth, workspaceHeight) / 2.0;
+
+    if (patternType === 'archimedean') {
+      const revs = p1; // e.g. 20
+      const scale = p2; // e.g. 90 (mm outer radius)
+      const stroke = [];
+      const steps = 1000;
+      const maxTheta = revs * 2 * Math.PI;
+      for (let i = 0; i <= steps; i++) {
+        const theta = (i / steps) * maxTheta;
+        const r = (theta / maxTheta) * scale;
+        const x = centerX + r * Math.cos(theta);
+        const y = centerY + r * Math.sin(theta);
+        stroke.push({ x, y });
+      }
+      this.strokes.push(stroke);
+    } 
+    else if (patternType === 'fermat') {
+      const revs = p1;
+      const scale = p2;
+      const maxTheta = revs * 2 * Math.PI;
+      const steps = 800;
+      
+      // Positive branch
+      const s1 = [];
+      for (let i = 0; i <= steps; i++) {
+        const theta = (i / steps) * maxTheta;
+        const r = scale * Math.sqrt(theta / maxTheta);
+        const x = centerX + r * Math.cos(theta);
+        const y = centerY + r * Math.sin(theta);
+        s1.push({ x, y });
+      }
+      this.strokes.push(s1);
+
+      // Negative branch
+      const s2 = [];
+      for (let i = 0; i <= steps; i++) {
+        const theta = (i / steps) * maxTheta;
+        const r = -scale * Math.sqrt(theta / maxTheta);
+        const x = centerX + r * Math.cos(theta);
+        const y = centerY + r * Math.sin(theta);
+        s2.push({ x, y });
+      }
+      this.strokes.push(s2);
+    } 
+    else if (patternType === 'spirograph') {
+      // Spirograph: p1 = inner gear radius (r), p2 = pen offset (d)
+      // R = fixed to outer ring radius (e.g. 90mm)
+      const R = maxR * 0.95;
+      const r = p1;
+      const d = p2;
+      const stroke = [];
+      
+      const gcd = (a, b) => b ? gcd(b, a % b) : a;
+      const common = gcd(Math.round(r * 10), Math.round(R * 10)) / 10;
+      const lcm = (r * R) / common;
+      const maxTheta = (2 * Math.PI * lcm) / R;
+      const steps = Math.min(3000, Math.max(500, Math.round(maxTheta * 20)));
+
+      for (let i = 0; i <= steps; i++) {
+        const theta = (i / steps) * maxTheta;
+        const x = centerX + (R - r) * Math.cos(theta) + d * Math.cos((R - r) * theta / r);
+        const y = centerY + (R - r) * Math.sin(theta) - d * Math.sin((R - r) * theta / r);
+        stroke.push({ x, y });
+      }
+      this.strokes.push(stroke);
+    } 
+    else if (patternType === 'rose') {
+      const n = p1; // multiplier
+      const scale = p2; // Scale
+      const stroke = [];
+      const steps = 1000;
+      const limitTheta = Math.PI * (n % 2 === 0 ? 2 : 1);
+      
+      for (let i = 0; i <= steps; i++) {
+        const theta = (i / steps) * limitTheta;
+        const r = scale * Math.cos(n * theta);
+        const x = centerX + r * Math.cos(theta);
+        const y = centerY + r * Math.sin(theta);
+        stroke.push({ x, y });
+      }
+      this.strokes.push(stroke);
+    } 
+    else if (patternType === 'lissajous') {
+      const fX = p1;
+      const fY = p2;
+      const scaleX = maxR * 0.9;
+      const scaleY = maxR * 0.9;
+      const stroke = [];
+      const steps = 1000;
+      const maxTheta = 2 * Math.PI;
+
+      for (let i = 0; i <= steps; i++) {
+        const theta = (i / steps) * maxTheta;
+        const x = centerX + scaleX * Math.sin(fX * theta + Math.PI / 4);
+        const y = centerY + scaleY * Math.sin(fY * theta);
+        stroke.push({ x, y });
+      }
+      this.strokes.push(stroke);
+    }
+
+    // Now map strokes to waypoints
+    this.waypoints = [];
+    for (const stroke of this.strokes) {
+      if (stroke.length < 2) continue;
+      this.waypoints.push({ x: stroke[0].x, y: stroke[0].y, z: penUpZ });
+      this.waypoints.push({ x: stroke[0].x, y: stroke[0].y, z: penDownZ });
+      for (let i = 1; i < stroke.length; i++) {
+        this.waypoints.push({ x: stroke[i].x, y: stroke[i].y, z: penDownZ });
+      }
+      const last = stroke[stroke.length - 1];
+      this.waypoints.push({ x: last.x, y: last.y, z: penUpZ });
+    }
+
+    if (this.previewCanvas) {
+      this._renderPreview(workspace);
+    }
+
+    return this.waypoints.length;
+  }
+
+  _renderPreview(workspace) {
+    const cv = this.previewCanvas;
+    const ctx = cv.getContext('2d');
+    cv.width = 400;
+    cv.height = 400;
+
+    ctx.fillStyle = '#0c0f16';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    ctx.strokeStyle = '#39ff14'; // neon green
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const { centerX, centerY, workspaceWidth, workspaceHeight } = workspace;
+    const minX = centerX - workspaceWidth / 2;
+    const minY = centerY - workspaceHeight / 2;
+
+    const toCanvasX = x => ((x - minX) / workspaceWidth) * cv.width;
+    const toCanvasY = y => ((y - minY) / workspaceHeight) * cv.height;
+
+    for (const stroke of this.strokes) {
+      if (stroke.length < 2) continue;
+      ctx.beginPath();
+      ctx.moveTo(toCanvasX(stroke[0].x), toCanvasY(stroke[0].y));
+      for (let i = 1; i < stroke.length; i++) {
+        ctx.lineTo(toCanvasX(stroke[i].x), toCanvasY(stroke[i].y));
+      }
+      ctx.stroke();
+    }
+  }
+
+  renderLivePosition(currentWpIndex, workspace) {
+    if (!this.previewCanvas || !this.strokes) return;
+    const cv = this.previewCanvas;
+    const ctx = cv.getContext('2d');
+    
+    ctx.fillStyle = '#0c0f16';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    const { centerX, centerY, workspaceWidth, workspaceHeight } = workspace;
+    const minX = centerX - workspaceWidth / 2;
+    const minY = centerY - workspaceHeight / 2;
+    const toCanvasX = x => ((x - minX) / workspaceWidth) * cv.width;
+    const toCanvasY = y => ((y - minY) / workspaceHeight) * cv.height;
+
+    // 1. Draw target outlines in faint neon green
+    ctx.strokeStyle = 'rgba(57, 255, 20, 0.15)';
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const stroke of this.strokes) {
+      if (stroke.length < 2) continue;
+      ctx.beginPath();
+      ctx.moveTo(toCanvasX(stroke[0].x), toCanvasY(stroke[0].y));
+      for (let i = 1; i < stroke.length; i++) {
+        ctx.lineTo(toCanvasX(stroke[i].x), toCanvasY(stroke[i].y));
+      }
+      ctx.stroke();
+    }
+
+    // 2. Draw drawn segment so far in bright neon green
+    ctx.strokeStyle = '#39ff14';
+    ctx.lineWidth = 2.0;
+    const wps = this.waypoints;
+    let pathStarted = false;
+    for (let i = 0; i <= currentWpIndex && i < wps.length; i++) {
+      const wp = wps[i];
+      const cx = toCanvasX(wp.x);
+      const cy = toCanvasY(wp.y);
+      if (wp.z <= this._lastPenDownZ + 0.1) {
+        if (!pathStarted) {
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          pathStarted = true;
+        } else {
+          ctx.lineTo(cx, cy);
+        }
+      } else {
+        if (pathStarted) {
+          ctx.stroke();
+          pathStarted = false;
+        }
+      }
+    }
+    if (pathStarted) ctx.stroke();
+
+    // 3. Draw pulsing cursor
+    if (currentWpIndex >= 0 && currentWpIndex < wps.length) {
+      const curWp = wps[currentWpIndex];
+      const cx = toCanvasX(curWp.x);
+      const cy = toCanvasY(curWp.y);
+      const penDown = curWp.z <= this._lastPenDownZ + 0.1;
+      const color = penDown ? '#ff0055' : '#00bfff';
+
+      const pulse = 6 + Math.sin(performance.now() / 80) * 1.5;
+      ctx.beginPath();
+      ctx.arc(cx, cy, pulse, 0, 2 * Math.PI);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, 2, 0, 2 * Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+  }
+
+  async streamToPlotter(socket, feedrateXY, feedrateZ, onProgress, isCancelled) {
+    const wps = this.waypoints;
+    if (!wps.length) return;
+    this._stopped = false;
+    this._pendingOkResolvers = [];
+    let inFlight = 0;
+    const maxInFlight = 2;
+
+    const waitOk = () => new Promise(resolve => this._pendingOkResolvers.push(resolve));
+
+    for (let i = 0; i < wps.length; i++) {
+      if (this._stopped || (isCancelled && isCancelled())) break;
+
+      if (this._paused) {
+        await new Promise(resolve => { this._resumeResolve = resolve; });
+      }
+      if (this._stopped) break;
+
+      while (inFlight >= maxInFlight && !this._stopped) {
+        await waitOk();
+        inFlight = Math.max(0, inFlight - 1);
+      }
+      if (this._stopped) break;
+
+      const wp = wps[i];
+      const isZOnly = i > 0 &&
+        Math.abs(wps[i-1].x - wp.x) < 0.01 &&
+        Math.abs(wps[i-1].y - wp.y) < 0.01;
+      const f = isZOnly ? feedrateZ : feedrateXY;
+
+      inFlight++;
+      socket.send(`gcode-plot:G1 X${wp.x.toFixed(1)} Y${wp.y.toFixed(1)} Z${wp.z.toFixed(1)} F${f}`);
+      
+      if (onProgress) onProgress(i + 1, wps.length, i);
+    }
+
+    while (inFlight > 0 && !this._stopped) {
+      await waitOk();
+      inFlight = Math.max(0, inFlight - 1);
+    }
+
+    const last = wps[wps.length-1];
+    socket.send(`gcode-plot:G1 X${last.x.toFixed(1)} Y${last.y.toFixed(1)} Z${this._lastPenUpZ+5} F${feedrateXY}`);
+  }
+}

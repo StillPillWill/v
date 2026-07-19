@@ -68,6 +68,7 @@
               <button class="tab-btn active" data-tab="kinematic">Manual Control</button>
               <button class="tab-btn" data-tab="planner">Path Planner</button>
               <button class="tab-btn" data-tab="plotter">Image Plotter</button>
+              <button class="tab-btn" data-tab="generative">Math Art</button>
             </div>
           </div>
 
@@ -222,6 +223,65 @@
                   <div id="plotter-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #39ff14, #00e6ff); transition: width 0.1s ease;"></div>
                 </div>
                 <div id="plotter-progress-counts" style="font-size: 0.7rem; color: var(--text-muted); text-align: center; margin-top: 2px;">0 / 0 moves</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab Content: Math Art Generator -->
+          <div class="tab-content" id="tab-generative">
+            <div class="card">
+              <h3>Math Art Generator</h3>
+              <p class="card-desc">Render and print algorithmically generated geometric shapes.</p>
+
+              <!-- Preview Canvas -->
+              <canvas id="generative-preview" style="width: 100%; border-radius: 8px; border: 1px solid var(--border-color); background: #0c0f16; margin-bottom: 12px; aspect-ratio: 1;"></canvas>
+
+              <!-- Controls -->
+              <div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;">
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <label style="color: var(--text-muted); font-size: 0.75rem;">Pattern Type</label>
+                  <select id="gen-pattern-type" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: var(--font-sans); border-radius: 4px; padding: 4px 8px; font-size: 0.85rem; outline: none; cursor: pointer; height: 30px;">
+                    <option value="archimedean" selected>Archimedean Spiral</option>
+                    <option value="fermat">Fermat Spiral</option>
+                    <option value="spirograph">Spirograph (Hypotrochoid)</option>
+                    <option value="rose">Rose Curve (Petals)</option>
+                    <option value="lissajous">Lissajous Curve</option>
+                  </select>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;" id="gen-params-grid">
+                  <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <label id="lbl-gen-p1" style="color: var(--text-muted); font-size: 0.75rem;">Density (Revs)</label>
+                    <input type="number" id="gen-p1" value="20" step="1" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
+                  </div>
+                  <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <label id="lbl-gen-p2" style="color: var(--text-muted); font-size: 0.75rem;">Scale</label>
+                    <input type="number" id="gen-p2" value="90" step="5" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: 'JetBrains Mono'; border-radius: 4px; padding: 4px 8px; text-align: center; font-size: 0.85rem; outline: none;" />
+                  </div>
+                </div>
+              </div>
+
+              <div id="generative-status" style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 10px; min-height: 18px;"></div>
+
+              <button class="btn btn-primary" id="btn-generative-generate" style="width: 100%; margin-bottom: 8px;">Generate Art</button>
+              
+              <!-- Plot control buttons -->
+              <button class="btn btn-success" id="btn-generative-plot" style="width: 100%;" disabled>▶ Start Plotting</button>
+              <div id="generative-active-controls" style="display: none; gap: 8px;">
+                <button class="btn btn-warning" id="btn-generative-pause" style="flex: 1; padding: 8px 0;">⏸ Pause</button>
+                <button class="btn btn-danger" id="btn-generative-stop" style="flex: 1; padding: 8px 0;">⏹ Stop</button>
+              </div>
+
+              <!-- Progress indicator -->
+              <div id="generative-progress-container" style="display: none; flex-direction: column; gap: 6px; margin-top: 12px; background: rgba(0,0,0,0.15); padding: 10px; border-radius: 6px; border: 1px solid var(--border-color);">
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
+                  <span>Progress: <span id="generative-progress-pct" class="mono" style="color: var(--text-main); font-weight: bold;">0%</span></span>
+                  <span id="generative-progress-eta" class="mono" style="color: #00e6ff; font-weight: bold;">ETA: --:--</span>
+                </div>
+                <div style="width: 100%; height: 6px; background: #0c0f16; border-radius: 3px; overflow: hidden;">
+                  <div id="generative-progress-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #39ff14, #00e6ff); transition: width 0.1s ease;"></div>
+                </div>
+                <div id="generative-progress-counts" style="font-size: 0.7rem; color: var(--text-muted); text-align: center; margin-top: 2px;">0 / 0 moves</div>
               </div>
             </div>
           </div>
