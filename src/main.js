@@ -97,6 +97,8 @@ const dom = {
   plotterMinStroke:  document.getElementById('plotter-min-stroke'),
   plotterSimplification: document.getElementById('plotter-simplification'),
   plotterMergeGap:   document.getElementById('plotter-merge-gap'),
+  plotterMode:       document.getElementById('plotter-mode'),
+  plotterLineWidth:  document.getElementById('plotter-line-width'),
   plotterStyle:      document.getElementById('plotter-style'),
   plotterShadingDensity: document.getElementById('plotter-shading-density'),
   plotterStatus:     document.getElementById('plotter-status'),
@@ -901,6 +903,12 @@ function initPlotter() {
   if (d.plotterMergeGap) {
     d.plotterMergeGap.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
   }
+  if (d.plotterMode) {
+    d.plotterMode.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+  }
+  if (d.plotterLineWidth) {
+    d.plotterLineWidth.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+  }
   if (d.plotterStyle) {
     d.plotterStyle.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
   }
@@ -1038,6 +1046,8 @@ function _plotterRunProcess() {
     const minStroke = parseInt(dom.plotterMinStroke?.value, 10) || 8;
     const simplification = parseFloat(dom.plotterSimplification?.value) || 1.5;
     const mergeGapMM = parseFloat(dom.plotterMergeGap?.value) || 4.0;
+    const processingMode = dom.plotterMode?.value || 'lineart';
+    const lineWidthMM = parseFloat(dom.plotterLineWidth?.value) || 0.8;
     const drawingStyle = dom.plotterStyle?.value || 'outlines';
     const shadingDensity = parseInt(dom.plotterShadingDensity?.value, 10) || 6;
 
@@ -1053,7 +1063,7 @@ function _plotterRunProcess() {
     };
 
     const count = imagePlotter.process(
-      numLines, threshold, minStroke, simplification, mergeGapMM, drawingStyle, shadingDensity, workspace, penDownZ, penUpZ
+      numLines, threshold, minStroke, simplification, mergeGapMM, processingMode, lineWidthMM, drawingStyle, shadingDensity, workspace, penDownZ, penUpZ
     );
 
     // Show preview

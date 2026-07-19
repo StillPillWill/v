@@ -78,19 +78,22 @@ export class ImagePlotter {
 
   /**
    * @param {number} resolution — processing height in pixels (80–400)
-   * @param {number} threshold  — XDoG edge threshold; lower = more edges (1–50)
+   * @param {number} threshold  — edge threshold; lower = more edges (1–50)
    * @param {number} minStroke  — minimum stroke length in pixels to keep (2–20)
    * @param {number} simplification — Douglas-Peucker epsilon tolerance (0.1–10.0)
    * @param {number} mergeGapMM — maximum physical gap in mm to bridge without lifting the pen (0.0-20.0)
+   * @param {string} processingMode — 'lineart' or 'photo'
+   * @param {number} lineWidthMM — pen stroke width in mm (0.1–10.0)
    * @param {string} drawingStyle — 'outlines', 'hatch', or 'crosshatch'
    * @param {number} shadingDensity — spacing between shading lines in pixels (3–25)
    * @param {object} workspace
    * @param {number} penDownZ
    * @param {number} penUpZ
    */
-  process(resolution, threshold, minStroke, simplification, mergeGapMM, drawingStyle, shadingDensity, workspace, penDownZ, penUpZ) {
+  process(resolution, threshold, minStroke, simplification, mergeGapMM, processingMode, lineWidthMM, drawingStyle, shadingDensity, workspace, penDownZ, penUpZ) {
     if (!this.imageBitmap) throw new Error('No image loaded');
     this._lastPenUpZ = penUpZ;
+    this._lineWidthMM = lineWidthMM || 0.8;
 
     // ── A: Render ──────────────────────────────────────────────────────────
     const aspect = this.imageBitmap.width / this.imageBitmap.height;
@@ -110,28 +113,58 @@ export class ImagePlotter {
       gray[i] = 0.2126 * px[i*4] + 0.7152 * px[i*4+1] + 0.0722 * px[i*4+2];
     }
 
-    // ── C: CLAHE ───────────────────────────────────────────────────────────
-    const clahe = this._clahe(gray, resW, resH, 8, 8, 3.0);
+    let sketch;
+    let bilateral;
 
-    // ── D: Bilateral filter ────────────────────────────────────────────────
-    // sigmaS=2 (spatial radius), sigmaR=30 (color range)
-    // Key: preserves OBJECT EDGES while destroying skin texture / noise
-    const bilateral = this._bilateralFilter(clahe, resW, resH, 2.0, 30.0);
-
-    // ── E: XDoG at two scales → union ─────────────────────────────────────
-    // XDoG is designed for artistic sketch output — understands perceptual
-    // structure rather than just pixel gradients.
-    const xdogThresh = Math.max(0.001, threshold / 1000.0); // normalise to [0-0.1]
-    const sketchFine   = this._xdog(bilateral, resW, resH, 0.8, 1.6, 0.97, 100.0, xdogThresh);
-    const sketchMedium = this._xdog(bilateral, resW, resH, 1.6, 1.6, 0.97,  80.0, xdogThresh * 0.7);
-
-    const sketch = new Uint8Array(resW * resH);
-    for (let i = 0; i < resW * resH; i++) sketch[i] = sketchFine[i] | sketchMedium[i];
+    if (processingMode === 'lineart') {
+      // Line Art Mode: Adaptive Binarization + Zhang-Suen Medial Axis Thinning
+      // Extracts single-pixel centerlines to avoid double hollow outlines!
+      const binThresh = Math.max(30, Math.min(230, 255 - threshold * 4.0));
+      const bin = new Uint8Array(resW * resH);
+      for (let i = 0; i < resW * resH; i++) {
+        bin[i] = gray[i] < binThresh ? 1 : 0;
+      }
+      sketch = this._zhangSuenThinning(bin, resW, resH);
+      bilateral = gray; // fallback for shading calculation
+    } else {
+      // Photo Mode: CLAHE -> Bilateral filter -> Dual-Scale XDoG Contours
+      const clahe = this._clahe(gray, resW, resH, 8, 8, 3.0);
+      bilateral = this._bilateralFilter(clahe, resW, resH, 2.0, 30.0);
+      const xdogThresh = Math.max(0.001, threshold / 1000.0);
+      const sketchFine   = this._xdog(bilateral, resW, resH, 0.8, 1.6, 0.97, 100.0, xdogThresh);
+      const sketchMedium = this._xdog(bilateral, resW, resH, 1.6, 1.6, 0.97,  80.0, xdogThresh * 0.7);
+      sketch = new Uint8Array(resW * resH);
+      for (let i = 0; i < resW * resH; i++) sketch[i] = sketchFine[i] | sketchMedium[i];
+    }
 
     // ── F–I: Trace, filter, simplify, sort ────────────────────────────────
     const rawOutlines  = this._traceStrokes(sketch, resW, resH);
     const filteredOutlines = rawOutlines.filter(s => s.length >= Math.max(2, minStroke));
     const simplifiedOutlines = filteredOutlines.map(s => this._douglasPeucker(s, simplification)).filter(s => s.length >= 2);
+
+    // Multi-pass stroke thickening based on lineWidthMM
+    const extraPasses = Math.floor(lineWidthMM / 0.8);
+    let finalOutlines = simplifiedOutlines;
+    if (extraPasses > 1) {
+      finalOutlines = [];
+      const passOffsetPx = 0.5; // pixel offset spacing for multi-pass thickening
+      for (const stroke of simplifiedOutlines) {
+        finalOutlines.push(stroke);
+        for (let p = 1; p < extraPasses; p++) {
+          const offsetDist = (p % 2 === 1 ? 1 : -1) * Math.ceil(p / 2) * passOffsetPx;
+          const offsetStroke = [];
+          for (let i = 0; i < stroke.length; i++) {
+            const pt = stroke[i];
+            let dx = 0, dy = 0;
+            if (i < stroke.length - 1) { dx += stroke[i+1].x - pt.x; dy += stroke[i+1].y - pt.y; }
+            if (i > 0) { dx += pt.x - stroke[i-1].x; dy += pt.y - stroke[i-1].y; }
+            const len = Math.hypot(dx, dy) || 1;
+            offsetStroke.push({ x: pt.x + (-dy / len) * offsetDist, y: pt.y + (dx / len) * offsetDist });
+          }
+          finalOutlines.push(offsetStroke);
+        }
+      }
+    }
 
     const shadingStrokes = [];
     const step = Math.max(3, shadingDensity);
@@ -180,7 +213,7 @@ export class ImagePlotter {
     const simplifiedShading = shadingStrokes.map(s => this._douglasPeucker(s, simplification)).filter(s => s.length >= 2);
 
     // Combine outlines and shading
-    const allStrokes = simplifiedOutlines.concat(simplifiedShading);
+    const allStrokes = finalOutlines.concat(simplifiedShading);
 
     // Sort together to minimize travel path
     const sorted = this._sortStrokes(allStrokes);
@@ -285,6 +318,105 @@ export class ImagePlotter {
       out[y*w+x]=v00*(1-wx)*(1-wy)+v10*wx*(1-wy)+v01*(1-wx)*wy+v11*wx*wy;
     }
     return out;
+  }
+
+  // ── Zhang-Suen Thinning Algorithm (Medial Axis Skeletonization) ────────────
+  // Converts thick black line art / sketch strokes down to 1-pixel centerlines.
+  // Eliminates double-edges/hollow outlines when processing drawings and lineart.
+
+  _zhangSuenThinning(bin, w, h) {
+    const grid = new Uint8Array(bin);
+    let changed = true;
+    let iter = 0;
+
+    const getP = (x, y) => (x >= 0 && x < w && y >= 0 && y < h) ? grid[y * w + x] : 0;
+
+    while (changed && iter < 100) {
+      changed = false;
+      iter++;
+      
+      // Pass 1
+      const del1 = [];
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          if (grid[y * w + x] === 0) continue;
+
+          const p2 = getP(x, y - 1);
+          const p3 = getP(x + 1, y - 1);
+          const p4 = getP(x + 1, y);
+          const p5 = getP(x + 1, y + 1);
+          const p6 = getP(x, y + 1);
+          const p7 = getP(x - 1, y + 1);
+          const p8 = getP(x - 1, y);
+          const p9 = getP(x - 1, y - 1);
+
+          const B = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9;
+          if (B < 2 || B > 6) continue;
+
+          let A = 0;
+          if (p2 === 0 && p3 === 1) A++;
+          if (p3 === 0 && p4 === 1) A++;
+          if (p4 === 0 && p5 === 1) A++;
+          if (p5 === 0 && p6 === 1) A++;
+          if (p6 === 0 && p7 === 1) A++;
+          if (p7 === 0 && p8 === 1) A++;
+          if (p8 === 0 && p9 === 1) A++;
+          if (p9 === 0 && p2 === 1) A++;
+          if (A !== 1) continue;
+
+          if (p2 * p4 * p6 !== 0) continue;
+          if (p4 * p6 * p8 !== 0) continue;
+
+          del1.push(y * w + x);
+        }
+      }
+      for (let i = 0; i < del1.length; i++) {
+        grid[del1[i]] = 0;
+        changed = true;
+      }
+
+      // Pass 2
+      const del2 = [];
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          if (grid[y * w + x] === 0) continue;
+
+          const p2 = getP(x, y - 1);
+          const p3 = getP(x + 1, y - 1);
+          const p4 = getP(x + 1, y);
+          const p5 = getP(x + 1, y + 1);
+          const p6 = getP(x, y + 1);
+          const p7 = getP(x - 1, y + 1);
+          const p8 = getP(x - 1, y);
+          const p9 = getP(x - 1, y - 1);
+
+          const B = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9;
+          if (B < 2 || B > 6) continue;
+
+          let A = 0;
+          if (p2 === 0 && p3 === 1) A++;
+          if (p3 === 0 && p4 === 1) A++;
+          if (p4 === 0 && p5 === 1) A++;
+          if (p5 === 0 && p6 === 1) A++;
+          if (p6 === 0 && p7 === 1) A++;
+          if (p7 === 0 && p8 === 1) A++;
+          if (p8 === 0 && p9 === 1) A++;
+          if (p9 === 0 && p2 === 1) A++;
+          if (A !== 1) continue;
+
+          if (p2 * p4 * p8 !== 0) continue;
+          if (p2 * p6 * p8 !== 0) continue;
+
+          del2.push(y * w + x);
+        }
+      }
+      for (let i = 0; i < del2.length; i++) {
+        grid[del2[i]] = 0;
+        changed = true;
+      }
+    }
+
+    return grid;
   }
 
   // ── Bilateral filter ───────────────────────────────────────────────────────
@@ -463,7 +595,8 @@ export class ImagePlotter {
     ctx.fillStyle='#f5f0e8';
     ctx.fillRect(0,0,cv.width,cv.height);
     ctx.strokeStyle='#1a1a2e';
-    ctx.lineWidth=Math.max(1,SCALE*0.5);
+    const strokeW = Math.max(1, (this._lineWidthMM || 0.8) * SCALE * 0.5);
+    ctx.lineWidth = strokeW;
     ctx.lineCap='round'; ctx.lineJoin='round';
     for(const stroke of strokes){
       if(!stroke||stroke.length<2) continue;
