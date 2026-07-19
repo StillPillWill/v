@@ -127,14 +127,17 @@ export class ImagePlotter {
       sketch = this._zhangSuenThinning(bin, resW, resH);
       bilateral = gray; // fallback for shading calculation
     } else {
-      // Photo Mode: CLAHE -> Bilateral filter -> Dual-Scale XDoG Contours
+      // Photo Mode: CLAHE -> Bilateral filter -> XDoG Contours -> Zhang-Suen Medial Axis Thinning
+      // Converts raw XDoG contour meshes into crisp 2D vector portrait lines!
       const clahe = this._clahe(gray, resW, resH, 8, 8, 3.0);
       bilateral = this._bilateralFilter(clahe, resW, resH, 2.0, 30.0);
       const xdogThresh = Math.max(0.001, threshold / 1000.0);
       const sketchFine   = this._xdog(bilateral, resW, resH, 0.8, 1.6, 0.97, 100.0, xdogThresh);
       const sketchMedium = this._xdog(bilateral, resW, resH, 1.6, 1.6, 0.97,  80.0, xdogThresh * 0.7);
-      sketch = new Uint8Array(resW * resH);
-      for (let i = 0; i < resW * resH; i++) sketch[i] = sketchFine[i] | sketchMedium[i];
+      const rawContour = new Uint8Array(resW * resH);
+      for (let i = 0; i < resW * resH; i++) rawContour[i] = sketchFine[i] | sketchMedium[i];
+      // Thin photo contours down to single 2D vector lines!
+      sketch = this._zhangSuenThinning(rawContour, resW, resH);
     }
 
     // ── F–I: Trace, chain/connect, filter, simplify, smooth, sort ──────────
@@ -146,12 +149,12 @@ export class ImagePlotter {
     // Apply Chaikin vector curve smoothing for silky smooth 2D lineart
     const smoothedOutlines   = simplifiedOutlines.map(s => this._chaikinSmooth(s, 1));
 
-    // Multi-pass stroke thickening based on lineWidthMM
+    // Multi-pass stroke thickening with blur / overlap prevention
     const extraPasses = Math.floor(lineWidthMM / 0.8);
     let finalOutlines = smoothedOutlines;
     if (extraPasses > 1) {
       finalOutlines = [];
-      const passOffsetPx = 0.5; // pixel offset spacing for multi-pass thickening
+      const passOffsetPx = 0.6; // pixel offset spacing for multi-pass thickening
       for (const stroke of smoothedOutlines) {
         finalOutlines.push(stroke);
         for (let p = 1; p < extraPasses; p++) {
@@ -163,9 +166,14 @@ export class ImagePlotter {
             if (i < stroke.length - 1) { dx += stroke[i+1].x - pt.x; dy += stroke[i+1].y - pt.y; }
             if (i > 0) { dx += pt.x - stroke[i-1].x; dy += pt.y - stroke[i-1].y; }
             const len = Math.hypot(dx, dy) || 1;
-            offsetStroke.push({ x: pt.x + (-dy / len) * offsetDist, y: pt.y + (dx / len) * offsetDist });
+            const ox = pt.x + (-dy / len) * offsetDist;
+            const oy = pt.y + (dx / len) * offsetDist;
+            // Ensure offset stays within image bounds
+            if (ox >= 0 && ox < resW && oy >= 0 && oy < resH) {
+              offsetStroke.push({ x: ox, y: oy });
+            }
           }
-          finalOutlines.push(offsetStroke);
+          if (offsetStroke.length >= 2) finalOutlines.push(offsetStroke);
         }
       }
     }
