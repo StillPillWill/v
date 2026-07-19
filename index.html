@@ -167,9 +167,13 @@
                 <div style="display: flex; flex-direction: column; gap: 4px;">
                   <label style="color: var(--text-muted); font-size: 0.75rem;">Processing Mode</label>
                   <select id="plotter-mode" style="width:100%; background: #0c0f16; border: 1px solid var(--border-color); color: var(--text-main); font-family: var(--font-sans); border-radius: 4px; padding: 4px 8px; font-size: 0.85rem; outline: none; cursor: pointer; height: 30px;">
-                    <option value="ml_subject" selected>🤖 AI Subject Line Art (PyTorch CPU)</option>
-                    <option value="lineart">Line Art (Centerline Thinning)</option>
-                    <option value="photo">Photo (XDoG Contours)</option>
+                    <option value="ai_lineart" selected>✨ AI ControlNet Lineart (Photo / Portrait)</option>
+                    <option value="ai_anime">🎨 AI ControlNet Anime (Drawings / Manga)</option>
+                    <option value="ai_pidinet">⚡ AI PiDiNet (Fast Edge Outliner)</option>
+                    <option value="ai_hed">👁️ AI HED (Semantic Contour Outliner)</option>
+                    <option value="ml_subject">🤖 AI Subject Mask (PyTorch CPU)</option>
+                    <option value="lineart">✏️ Classic Line Art (Centerline Thinning)</option>
+                    <option value="photo">📷 Photo (XDoG Contours)</option>
                   </select>
                 </div>
                 <div style="display: flex; flex-direction: column; gap: 4px;">

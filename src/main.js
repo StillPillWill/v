@@ -1092,7 +1092,8 @@ function _plotterRunProcess() {
   try {
     const processingMode = dom.plotterMode?.value || 'ml_subject';
 
-    if (processingMode === 'ml_subject') {
+    const aiModes = ['ai_lineart', 'ai_anime', 'ai_pidinet', 'ai_hed', 'ml_subject'];
+    if (aiModes.includes(processingMode)) {
       if (!socket || socket.readyState !== WebSocket.OPEN) {
         setPlotterStatus('Error: Server WebSocket not connected. Check backend server.py.');
         return;
@@ -1102,7 +1103,7 @@ function _plotterRunProcess() {
         return;
       }
 
-      setPlotterStatus('🤖 Running PyTorch AI Subject Segmentation on CPU…');
+      setPlotterStatus(`✨ Running AI Lineart Outliner (${processingMode}) on CPU…`);
 
       // Use source image bitmap to create compact base64 JPEG for Python ML pipeline
       const cv = document.createElement('canvas');
@@ -1126,7 +1127,7 @@ function _plotterRunProcess() {
       const rawB64 = b64.includes(',') ? b64.split(',', 2)[1] : b64;
       const threshold = parseInt(dom.plotterThreshold.value, 10) || 30;
 
-      socket.send(`ml-process:${threshold}:${rawB64}`);
+      socket.send(`ml-process:${processingMode}:${threshold}:${rawB64}`);
       return;
     }
 

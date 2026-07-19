@@ -1,0 +1,10 @@
+pyserial
+torch
+torchvision
+opencv-python
+pillow
+numpy
+controlnet-aux
+timm
+einops
+scikit-image

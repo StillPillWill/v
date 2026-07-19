@@ -134,56 +134,117 @@ def _zhang_suen_thinning_np(bin_img):
         if np.any(del2): img[del2] = 0; changed = True
     return (img * 255).astype(np.uint8)
 
-def process_ml_image(base64_str, sensitivity=30):
+# Patch MediaPipe solutions for Python 3.14 compatibility before importing controlnet_aux
+import mediapipe as mp
+if not hasattr(mp, 'solutions'):
+    class DynamicMock:
+        def __getattr__(self, name): return self
+        def __call__(self, *args, **kwargs): return self
+        def __iter__(self): return iter([])
+        def __len__(self): return 0
+    mp.solutions = DynamicMock()
+
+# AI ControlNet Outliner Detectors
+ai_detectors = {
+    'ai_lineart': None,
+    'ai_anime': None,
+    'ai_pidinet': None,
+    'ai_hed': None
+}
+
+def get_ai_detector(mode):
+    global ai_detectors
+    if mode in ai_detectors and ai_detectors[mode] is not None:
+        return ai_detectors[mode]
+    try:
+        print(f"[AI OUTLINER] Loading model for {mode} on CPU...")
+        if mode == 'ai_lineart':
+            from controlnet_aux import LineartDetector
+            ai_detectors[mode] = LineartDetector.from_pretrained('lllyasviel/Annotators')
+        elif mode == 'ai_anime':
+            from controlnet_aux import LineartAnimeDetector
+            ai_detectors[mode] = LineartAnimeDetector.from_pretrained('lllyasviel/Annotators')
+        elif mode == 'ai_pidinet':
+            from controlnet_aux import PidiNetDetector
+            ai_detectors[mode] = PidiNetDetector.from_pretrained('lllyasviel/Annotators')
+        elif mode == 'ai_hed':
+            from controlnet_aux import HEDdetector
+            ai_detectors[mode] = HEDdetector.from_pretrained('lllyasviel/Annotators')
+        print(f"[AI OUTLINER] Model {mode} loaded successfully!")
+        return ai_detectors[mode]
+    except Exception as e:
+        print(f"[AI OUTLINER LOAD ERROR for {mode}] {e}")
+        return None
+
+def process_ml_image(base64_str, mode='ai_lineart', sensitivity=30):
     global ml_model, ml_preprocess
     try:
         img_bytes = _clean_b64_decode(base64_str)
-        print(f"[ML] Received {len(img_bytes)} bytes of image payload.")
+        print(f"[ML] Received {len(img_bytes)} bytes of image payload (mode={mode}).")
 
-        # Try OpenCV imdecode first
+        # Decode image
         nparr = np.frombuffer(img_bytes, np.uint8)
         img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-        # Fallback to PIL if cv2.imdecode returns None
         if img_bgr is None:
-            try:
-                import io
-                pil_img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
-                img_bgr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
-                print("[ML] Decoded image using PIL fallback successfully!")
-            except Exception as pil_err:
-                print(f"[ML ERROR] Image decode failed: {pil_err}")
-                return None
+            import io
+            pil_img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+        else:
+            pil_img = Image.fromarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
 
-        h, w = img_bgr.shape[:2]
+        h, w = pil_img.height, pil_img.width
 
-        # 1. Run PyTorch Subject Segmentation
+        # 1. AI ControlNet Outliner modes
+        if mode in ['ai_lineart', 'ai_anime', 'ai_pidinet', 'ai_hed']:
+            detector = get_ai_detector(mode)
+            if detector is not None:
+                res_pil = detector(pil_img)
+                res_np = np.array(res_pil)
+                if len(res_np.shape) == 3:
+                    res_gray = cv2.cvtColor(res_np, cv2.COLOR_RGB2GRAY)
+                else:
+                    res_gray = res_np
+
+                if res_gray.shape[:2] != (h, w):
+                    res_gray = cv2.resize(res_gray, (w, h), interpolation=cv2.INTER_AREA)
+
+                # Thin lines to single 1-pixel centerlines
+                bin_img = (res_gray > 40).astype(np.uint8) * 255
+                if hasattr(cv2, 'ximgproc') and hasattr(cv2.ximgproc, 'thinning'):
+                    thinned = cv2.ximgproc.thinning(bin_img, thinningType=cv2.ximgproc.THINNING_ZHANGSUEN)
+                else:
+                    thinned = _zhang_suen_thinning_np(bin_img)
+
+                result_img = cv2.bitwise_not(thinned)
+                _, encoded_img = cv2.imencode('.png', result_img)
+                res_b64 = base64.b64encode(encoded_img.tobytes()).decode('utf-8')
+                return f"data:image/png;base64,{res_b64}"
+            else:
+                mode = 'ml_subject'
+
+        # 2. PyTorch Subject Segmentation fallback
+        if img_bgr is None:
+            img_bgr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+
         mask = None
         if ml_model is not None:
             try:
-                pil_img = Image.fromarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
                 input_tensor = ml_preprocess(pil_img).unsqueeze(0)
                 with torch.no_grad():
                     output = ml_model(input_tensor)['out'][0]
                 output_predictions = output.argmax(0).numpy()
-                
-                # COCO Foreground classes > 0
                 fg_raw = (output_predictions > 0).astype(np.uint8) * 255
                 mask = cv2.resize(fg_raw, (w, h), interpolation=cv2.INTER_NEAREST)
-                
-                # Fallback if no foreground subject detected (e.g. abstract art)
                 if np.sum(mask > 0) < (w * h * 0.015):
                     mask = np.full((h, w), 255, dtype=np.uint8)
                 else:
                     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
                     mask = cv2.dilate(mask, kernel, iterations=2)
             except Exception as ex:
-                print(f"[ML INFERENCE ERROR] {ex}")
                 mask = np.full((h, w), 255, dtype=np.uint8)
         else:
             mask = np.full((h, w), 255, dtype=np.uint8)
 
-        # 2. Extract feature contours
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         bilateral = cv2.bilateralFilter(gray, d=7, sigmaColor=50, sigmaSpace=50)
 
@@ -194,7 +255,6 @@ def process_ml_image(base64_str, sensitivity=30):
         raw_features = cv2.bitwise_or(bin_img, canny)
         subject_features = cv2.bitwise_and(raw_features, mask)
 
-        # 3. Medial Axis Thinning (cv2.ximgproc if available, else numpy fallback)
         if hasattr(cv2, 'ximgproc') and hasattr(cv2.ximgproc, 'thinning'):
             thinned = cv2.ximgproc.thinning(subject_features, thinningType=cv2.ximgproc.THINNING_ZHANGSUEN)
         else:
@@ -584,15 +644,16 @@ def handle_ws_client(conn, addr):
                                 print(f"[SERIAL INSTANT ERROR] {ex}")
 
                 elif msg.startswith("ml-process:"):
-                    # Format: ml-process:<sensitivity>:<base64_data>
+                    # Format: ml-process:<mode>:<sensitivity>:<base64_data>
                     try:
                         content = msg[11:]
-                        parts = content.split(":", 1)
-                        sens = int(parts[0]) if len(parts) > 1 and parts[0].isdigit() else 30
-                        b64data = parts[1] if len(parts) > 1 else parts[0]
+                        parts = content.split(":", 2)
+                        mode = parts[0] if len(parts) > 2 else 'ai_lineart'
+                        sens = int(parts[1]) if len(parts) > 2 and parts[1].isdigit() else 30
+                        b64data = parts[2] if len(parts) > 2 else (parts[1] if len(parts) > 1 else parts[0])
                         
-                        print(f"[ML] Processing image on CPU (sensitivity={sens})...")
-                        res_img = process_ml_image(b64data, sensitivity=sens)
+                        print(f"[ML] Processing image on CPU (mode={mode}, sensitivity={sens})...")
+                        res_img = process_ml_image(b64data, mode=mode, sensitivity=sens)
                         if res_img:
                             conn.sendall(make_ws_frame(f"ml-result:{res_img}"))
                         else:
