@@ -56,15 +56,24 @@ def init_ml_model():
 # Load ML model on server startup in background thread
 threading.Thread(target=init_ml_model, daemon=True).start()
 
+def _clean_b64_decode(b64_str):
+    if "," in b64_str:
+        b64_str = b64_str.split(",", 1)[1]
+    b64_str = b64_str.strip().replace(" ", "+").replace("\n", "").replace("\r", "")
+    b64_str = b64_str.replace("-", "+").replace("_", "/")
+    missing_padding = len(b64_str) % 4
+    if missing_padding:
+        b64_str += "=" * (4 - missing_padding)
+    return base64.b64decode(b64_str)
+
 def process_ml_image(base64_str, sensitivity=30):
     global ml_model, ml_preprocess
     try:
-        if "," in base64_str:
-            base64_str = base64_str.split(",", 1)[1]
-        img_bytes = base64.b64decode(base64_str)
+        img_bytes = _clean_b64_decode(base64_str)
         nparr = np.frombuffer(img_bytes, np.uint8)
         img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if img_bgr is None:
+            print("[ML ERROR] Failed to decode image from bytes")
             return None
 
         h, w = img_bgr.shape[:2]

@@ -1112,9 +1112,10 @@ function _plotterRunProcess() {
       const ctx = cv.getContext('2d');
       ctx.drawImage(srcImg, 0, 0);
       const b64 = cv.toDataURL('image/png', 0.95);
+      const rawB64 = b64.includes(',') ? b64.split(',', 2)[1] : b64;
       const threshold = parseInt(dom.plotterThreshold.value, 10) || 30;
 
-      socket.send(`ml-process:${threshold}:${b64}`);
+      socket.send(`ml-process:${threshold}:${rawB64}`);
       return;
     }
 
