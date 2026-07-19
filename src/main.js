@@ -1096,6 +1096,8 @@ function initGenerative() {
       setParams('Petal Count (n)', 5, 'Scale (Radius mm)', 90);
     } else if (type === 'lissajous') {
       setParams('X Frequency', 3, 'Y Frequency', 4);
+    } else if (type.startsWith('rotate_')) {
+      setParams('Copies / Rotations', 24, 'Scale (Radius mm)', 85);
     }
     _generativeRunGenerate();
   });

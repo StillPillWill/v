@@ -739,6 +739,64 @@ export class GenerativePlotter {
       }
       this.strokes.push(stroke);
     }
+    else if (patternType.startsWith('rotate_')) {
+      const numCopies = Math.max(3, Math.min(120, Math.round(p1)));
+      const scale = p2;
+      const baseShape = patternType.replace('rotate_', '');
+      
+      // Generate base 2D shape points around (0,0)
+      const basePts = [];
+      if (baseShape === 'square') {
+        for (let i = 0; i <= 4; i++) {
+          const a = (i / 4) * 2 * Math.PI + Math.PI / 4;
+          basePts.push({ x: scale * Math.cos(a), y: scale * Math.sin(a) });
+        }
+      } else if (baseShape === 'triangle') {
+        for (let i = 0; i <= 3; i++) {
+          const a = (i / 3) * 2 * Math.PI - Math.PI / 2;
+          basePts.push({ x: scale * Math.cos(a), y: scale * Math.sin(a) });
+        }
+      } else if (baseShape === 'hexagon') {
+        for (let i = 0; i <= 6; i++) {
+          const a = (i / 6) * 2 * Math.PI;
+          basePts.push({ x: scale * Math.cos(a), y: scale * Math.sin(a) });
+        }
+      } else if (baseShape === 'star') {
+        for (let i = 0; i <= 10; i++) {
+          const a = (i / 10) * 2 * Math.PI - Math.PI / 2;
+          const r = (i % 2 === 0) ? scale : scale * 0.45;
+          basePts.push({ x: r * Math.cos(a), y: r * Math.sin(a) });
+        }
+      } else if (baseShape === 'ellipse') {
+        const steps = 60;
+        for (let i = 0; i <= steps; i++) {
+          const a = (i / steps) * 2 * Math.PI;
+          basePts.push({ x: scale * Math.cos(a), y: (scale * 0.4) * Math.sin(a) });
+        }
+      } else if (baseShape === 'heart') {
+        const steps = 80;
+        for (let i = 0; i <= steps; i++) {
+          const t = (i / steps) * 2 * Math.PI;
+          const hx = 16 * Math.pow(Math.sin(t), 3);
+          const hy = -(13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
+          basePts.push({ x: (hx / 16) * scale, y: (hy / 17) * scale });
+        }
+      }
+
+      // Generate N rotated copies around center
+      for (let k = 0; k < numCopies; k++) {
+        const phi = (k / numCopies) * 2 * Math.PI;
+        const cosP = Math.cos(phi);
+        const sinP = Math.sin(phi);
+        const stroke = [];
+        for (const pt of basePts) {
+          const rx = pt.x * cosP - pt.y * sinP + centerX;
+          const ry = pt.x * sinP + pt.y * cosP + centerY;
+          stroke.push({ x: rx, y: ry });
+        }
+        this.strokes.push(stroke);
+      }
+    }
 
     // Now map strokes to waypoints
     this.waypoints = [];
