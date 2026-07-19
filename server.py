@@ -70,11 +70,22 @@ def process_ml_image(base64_str, sensitivity=30):
     global ml_model, ml_preprocess
     try:
         img_bytes = _clean_b64_decode(base64_str)
+        print(f"[ML] Received {len(img_bytes)} bytes of image payload.")
+
+        # Try OpenCV imdecode first
         nparr = np.frombuffer(img_bytes, np.uint8)
         img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        # Fallback to PIL if cv2.imdecode returns None
         if img_bgr is None:
-            print("[ML ERROR] Failed to decode image from bytes")
-            return None
+            try:
+                import io
+                pil_img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+                img_bgr = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+                print("[ML] Decoded image using PIL fallback successfully!")
+            except Exception as pil_err:
+                print(f"[ML ERROR] Image decode failed: {pil_err}")
+                return None
 
         h, w = img_bgr.shape[:2]
 
