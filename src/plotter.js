@@ -137,18 +137,22 @@ export class ImagePlotter {
       for (let i = 0; i < resW * resH; i++) sketch[i] = sketchFine[i] | sketchMedium[i];
     }
 
-    // ── F–I: Trace, filter, simplify, sort ────────────────────────────────
+    // ── F–I: Trace, chain/connect, filter, simplify, smooth, sort ──────────
     const rawOutlines  = this._traceStrokes(sketch, resW, resH);
-    const filteredOutlines = rawOutlines.filter(s => s.length >= Math.max(2, minStroke));
+    // Connect nearby polyline endpoints to bridge gaps and create long continuous 2D vector strokes
+    const connectedOutlines = this._connectNearbyStrokes(rawOutlines, 6);
+    const filteredOutlines  = connectedOutlines.filter(s => s.length >= Math.max(2, minStroke));
     const simplifiedOutlines = filteredOutlines.map(s => this._douglasPeucker(s, simplification)).filter(s => s.length >= 2);
+    // Apply Chaikin vector curve smoothing for silky smooth 2D lineart
+    const smoothedOutlines   = simplifiedOutlines.map(s => this._chaikinSmooth(s, 1));
 
     // Multi-pass stroke thickening based on lineWidthMM
     const extraPasses = Math.floor(lineWidthMM / 0.8);
-    let finalOutlines = simplifiedOutlines;
+    let finalOutlines = smoothedOutlines;
     if (extraPasses > 1) {
       finalOutlines = [];
       const passOffsetPx = 0.5; // pixel offset spacing for multi-pass thickening
-      for (const stroke of simplifiedOutlines) {
+      for (const stroke of smoothedOutlines) {
         finalOutlines.push(stroke);
         for (let p = 1; p < extraPasses; p++) {
           const offsetDist = (p % 2 === 1 ? 1 : -1) * Math.ceil(p / 2) * passOffsetPx;
@@ -557,6 +561,81 @@ export class ImagePlotter {
         .concat(this._douglasPeucker(pts.slice(maxI),eps));
     }
     return [f,l];
+  }
+
+  // ── Polyline Endpoint Chaining (Gaps & Fragment Bridging) ──────────────────
+  // Glues nearby endpoint tips together into long continuous vector strokes,
+  // completely eliminating broken "chicken scratch" fragments.
+
+  _connectNearbyStrokes(strokes, maxDistPx) {
+    if (!strokes || !strokes.length) return strokes;
+    let list = strokes.filter(s => s && s.length >= 2);
+    let merged = true;
+
+    while (merged) {
+      merged = false;
+      for (let i = 0; i < list.length; i++) {
+        if (!list[i]) continue;
+        const s1 = list[i];
+        const p1_end = s1[s1.length - 1];
+
+        for (let j = 0; j < list.length; j++) {
+          if (i === j || !list[j]) continue;
+          const s2 = list[j];
+          const p2_start = s2[0];
+          const p2_end = s2[s2.length - 1];
+
+          // Check End(s1) -> Start(s2)
+          if (Math.hypot(p1_end.x - p2_start.x, p1_end.y - p2_start.y) <= maxDistPx) {
+            list[i] = s1.concat(s2.slice(1));
+            list[j] = null;
+            merged = true;
+            break;
+          }
+          // Check End(s1) -> End(s2)
+          if (Math.hypot(p1_end.x - p2_end.x, p1_end.y - p2_end.y) <= maxDistPx) {
+            const s2_rev = s2.slice().reverse();
+            list[i] = s1.concat(s2_rev.slice(1));
+            list[j] = null;
+            merged = true;
+            break;
+          }
+        }
+        if (merged) break;
+      }
+      list = list.filter(Boolean);
+    }
+
+    return list;
+  }
+
+  // ── Chaikin Corner Smoothing (2D Vector Curve Fitting) ───────────────────
+  // Smooths polygonal line steps into silky-smooth continuous 2D vector curves.
+
+  _chaikinSmooth(stroke, iterations = 1) {
+    if (!stroke || stroke.length <= 2) return stroke;
+    let current = stroke;
+
+    for (let it = 0; it < iterations; it++) {
+      const smoothed = [];
+      smoothed.push(current[0]);
+
+      for (let i = 0; i < current.length - 1; i++) {
+        const p0 = current[i];
+        const p1 = current[i + 1];
+
+        const q = { x: 0.75 * p0.x + 0.25 * p1.x, y: 0.75 * p0.y + 0.25 * p1.y };
+        const r = { x: 0.25 * p0.x + 0.75 * p1.x, y: 0.25 * p0.y + 0.75 * p1.y };
+
+        smoothed.push(q);
+        smoothed.push(r);
+      }
+
+      smoothed.push(current[current.length - 1]);
+      current = smoothed;
+    }
+
+    return current;
   }
 
   // ── Greedy nearest-neighbour stroke sort ─────────────────────────────────
