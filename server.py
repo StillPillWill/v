@@ -199,11 +199,10 @@ def parse_ws_frame(data):
     if masked:
         mask_key = data[idx:idx+4]
         idx += 4
-        payload = data[idx:idx+payload_len]
-        decoded = bytearray(payload_len)
-        for i in range(payload_len):
-            decoded[i] = payload[i] ^ mask_key[i % 4]
-        return decoded.decode('utf-8', errors='ignore'), idx + payload_len
+        raw_payload = np.frombuffer(data[idx:idx+payload_len], dtype=np.uint8)
+        mask_arr = np.frombuffer(mask_key, dtype=np.uint8)
+        unmasked = np.bitwise_xor(raw_payload, np.resize(mask_arr, payload_len))
+        return unmasked.tobytes().decode('utf-8', errors='ignore'), idx + payload_len
     else:
         payload = data[idx:idx+payload_len]
         return payload.decode('utf-8', errors='ignore'), idx + payload_len
