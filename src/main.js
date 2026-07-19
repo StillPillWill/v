@@ -174,6 +174,41 @@ function connectWebSocket() {
         const resolve = generativePlotter._pendingOkResolvers.shift();
         if (resolve) resolve();
       }
+    } else if (data.startsWith("ml-result:")) {
+      const b64Data = data.slice(10);
+      setPlotterStatus('AI Subject Extracted! Generating vector paths…');
+      imagePlotter.loadFromDataUrl(b64Data).then(() => {
+        const numLines  = parseInt(dom.plotterLines.value, 10)    || 160;
+        const threshold = parseInt(dom.plotterThreshold.value, 10) || 30;
+        const minStroke = parseInt(dom.plotterMinStroke?.value, 10) || 8;
+        const simplification = parseFloat(dom.plotterSimplification?.value) || 1.5;
+        const mergeGapMM = parseFloat(dom.plotterMergeGap?.value) || 4.0;
+        const lineWidthMM = parseFloat(dom.plotterLineWidth?.value) || 0.8;
+        const drawingStyle = dom.plotterStyle?.value || 'outlines';
+        const shadingDensity = parseInt(dom.plotterShadingDensity?.value, 10) || 6;
+
+        const wW = parseFloat(dom.workspaceWidthInput?.value)  || handProcessor.workspaceWidth  || 200;
+        const wH = parseFloat(dom.workspaceHeightInput?.value) || handProcessor.workspaceHeight || 200;
+
+        const workspace = {
+          centerX: handProcessor.centerX,
+          centerY: handProcessor.centerY,
+          workspaceWidth:  wW,
+          workspaceHeight: wH
+        };
+
+        const count = imagePlotter.process(
+          numLines, threshold, minStroke, simplification, mergeGapMM, 'lineart', lineWidthMM, drawingStyle, shadingDensity, workspace, penDownZ, penUpZ
+        );
+
+        dom.plotterPreview.style.display = 'block';
+        dom.plotterBtnPlot.disabled = false;
+        setPlotterStatus(`AI Subject Line Art Ready — ${count} moves! Hit "Start Plotting".`);
+      }).catch(err => {
+        setPlotterStatus('AI processing error: ' + err.message);
+      });
+    } else if (data.startsWith("ml-error:")) {
+      setPlotterStatus('AI Error: ' + data.slice(9));
     }
   };
 
@@ -891,29 +926,40 @@ function initPlotter() {
     _plotterRunProcess();
   });
 
-  // Re-process live when sliders change
-  d.plotterLines.addEventListener('change',     () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
-  d.plotterThreshold.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+  const _triggerLiveReprocess = () => {
+    if (d.plotterMode?.value === 'ml_subject') return; // Do NOT auto-refresh on heavy ML pipeline!
+    if (imagePlotter.imageBitmap) _plotterRunProcess();
+  };
+
+  // Re-process live when sliders change (except for heavy AI mode)
+  d.plotterLines.addEventListener('change',     _triggerLiveReprocess);
+  d.plotterThreshold.addEventListener('change', _triggerLiveReprocess);
   if (d.plotterMinStroke) {
-    d.plotterMinStroke.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+    d.plotterMinStroke.addEventListener('change', _triggerLiveReprocess);
   }
   if (d.plotterSimplification) {
-    d.plotterSimplification.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+    d.plotterSimplification.addEventListener('change', _triggerLiveReprocess);
   }
   if (d.plotterMergeGap) {
-    d.plotterMergeGap.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+    d.plotterMergeGap.addEventListener('change', _triggerLiveReprocess);
   }
   if (d.plotterMode) {
-    d.plotterMode.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+    d.plotterMode.addEventListener('change', () => {
+      if (d.plotterMode.value === 'ml_subject') {
+        setPlotterStatus('AI Subject Mode selected. Press "Process Image" to run pipeline.');
+      } else {
+        _triggerLiveReprocess();
+      }
+    });
   }
   if (d.plotterLineWidth) {
-    d.plotterLineWidth.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+    d.plotterLineWidth.addEventListener('change', _triggerLiveReprocess);
   }
   if (d.plotterStyle) {
-    d.plotterStyle.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+    d.plotterStyle.addEventListener('change', _triggerLiveReprocess);
   }
   if (d.plotterShadingDensity) {
-    d.plotterShadingDensity.addEventListener('change', () => { if (imagePlotter.imageBitmap) _plotterRunProcess(); });
+    d.plotterShadingDensity.addEventListener('change', _triggerLiveReprocess);
   }
 
   // ── Plot ─────────────────────────────────────────────────────────────────
@@ -1024,6 +1070,7 @@ async function _plotterLoadFile(file) {
   setPlotterStatus('Loading image…');
   try {
     await imagePlotter.loadFromFile(file);
+    imagePlotter._rawSourceBitmap = imagePlotter.imageBitmap;
     _plotterImageReady();
   } catch (e) {
     setPlotterStatus('Failed to load image: ' + e.message);
@@ -1031,22 +1078,52 @@ async function _plotterLoadFile(file) {
 }
 
 function _plotterImageReady() {
-  setPlotterStatus('Image loaded. Press "Process Image" to preview.');
   dom.plotterBtnProcess.disabled = false;
   dom.plotterBtnPlot.disabled    = true;
-  // Auto-process with current settings
-  _plotterRunProcess();
+  if (dom.plotterMode?.value === 'ml_subject') {
+    setPlotterStatus('Image loaded. Press "Process Image" to run AI Subject Line Art pipeline.');
+  } else {
+    setPlotterStatus('Image loaded. Processing…');
+    _plotterRunProcess();
+  }
 }
 
 function _plotterRunProcess() {
-  setPlotterStatus('Processing…');
   try {
+    const processingMode = dom.plotterMode?.value || 'ml_subject';
+
+    if (processingMode === 'ml_subject') {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        setPlotterStatus('Error: Server WebSocket not connected. Check backend server.py.');
+        return;
+      }
+      if (!imagePlotter.imageBitmap) {
+        setPlotterStatus('No image loaded. Please upload or capture an image first.');
+        return;
+      }
+
+      setPlotterStatus('🤖 Running PyTorch AI Subject Segmentation on CPU…');
+
+      // Use source image bitmap to create base64 PNG for Python ML pipeline
+      const cv = document.createElement('canvas');
+      const srcImg = imagePlotter._rawSourceBitmap || imagePlotter.imageBitmap;
+      cv.width = srcImg.width;
+      cv.height = srcImg.height;
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(srcImg, 0, 0);
+      const b64 = cv.toDataURL('image/png', 0.95);
+      const threshold = parseInt(dom.plotterThreshold.value, 10) || 30;
+
+      socket.send(`ml-process:${threshold}:${b64}`);
+      return;
+    }
+
+    setPlotterStatus('Processing…');
     const numLines  = parseInt(dom.plotterLines.value, 10)    || 160;
     const threshold = parseInt(dom.plotterThreshold.value, 10) || 30;
     const minStroke = parseInt(dom.plotterMinStroke?.value, 10) || 8;
     const simplification = parseFloat(dom.plotterSimplification?.value) || 1.5;
     const mergeGapMM = parseFloat(dom.plotterMergeGap?.value) || 4.0;
-    const processingMode = dom.plotterMode?.value || 'lineart';
     const lineWidthMM = parseFloat(dom.plotterLineWidth?.value) || 0.8;
     const drawingStyle = dom.plotterStyle?.value || 'outlines';
     const shadingDensity = parseInt(dom.plotterShadingDensity?.value, 10) || 6;

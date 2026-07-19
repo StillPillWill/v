@@ -74,6 +74,15 @@ export class ImagePlotter {
     });
   }
 
+  loadFromDataUrl(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload  = () => { this.imageBitmap = img; resolve(); };
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+  }
+
   // ── Core process ───────────────────────────────────────────────────────────
 
   /**

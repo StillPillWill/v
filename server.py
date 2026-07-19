@@ -32,6 +32,92 @@ HTTP_PORT = 8000
 WS_PORT = 8765
 BAUD_RATE = 115200
 
+# --- ML & AI Line Art Pipeline ---
+import torch
+import torchvision
+import cv2
+import numpy as np
+from PIL import Image
+
+ml_model = None
+ml_preprocess = None
+
+def init_ml_model():
+    global ml_model, ml_preprocess
+    try:
+        print("[ML] Loading PyTorch LRASPP MobileNetV3 segmentation model...")
+        weights = torchvision.models.segmentation.LRASPP_MobileNet_V3_Large_Weights.DEFAULT
+        ml_model = torchvision.models.segmentation.lraspp_mobilenet_v3_large(weights=weights).eval()
+        ml_preprocess = weights.transforms()
+        print("[ML] Segmentation model loaded successfully!")
+    except Exception as e:
+        print(f"[ML MODEL LOAD ERROR] {e}")
+
+# Load ML model on server startup in background thread
+threading.Thread(target=init_ml_model, daemon=True).start()
+
+def process_ml_image(base64_str, sensitivity=30):
+    global ml_model, ml_preprocess
+    try:
+        if "," in base64_str:
+            base64_str = base64_str.split(",", 1)[1]
+        img_bytes = base64.b64decode(base64_str)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img_bgr is None:
+            return None
+
+        h, w = img_bgr.shape[:2]
+
+        # 1. Run PyTorch Subject Segmentation
+        mask = None
+        if ml_model is not None:
+            try:
+                pil_img = Image.fromarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
+                input_tensor = ml_preprocess(pil_img).unsqueeze(0)
+                with torch.no_grad():
+                    output = ml_model(input_tensor)['out'][0]
+                output_predictions = output.argmax(0).numpy()
+                
+                # COCO Foreground classes > 0
+                fg_raw = (output_predictions > 0).astype(np.uint8) * 255
+                mask = cv2.resize(fg_raw, (w, h), interpolation=cv2.INTER_NEAREST)
+                
+                # Fallback if no foreground subject detected (e.g. abstract art)
+                if np.sum(mask > 0) < (w * h * 0.015):
+                    mask = np.full((h, w), 255, dtype=np.uint8)
+                else:
+                    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+                    mask = cv2.dilate(mask, kernel, iterations=2)
+            except Exception as ex:
+                print(f"[ML INFERENCE ERROR] {ex}")
+                mask = np.full((h, w), 255, dtype=np.uint8)
+        else:
+            mask = np.full((h, w), 255, dtype=np.uint8)
+
+        # 2. Extract feature contours
+        gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+        bilateral = cv2.bilateralFilter(gray, d=7, sigmaColor=50, sigmaSpace=50)
+
+        thresh_val = max(30, min(230, 255 - sensitivity * 4.0))
+        _, bin_img = cv2.threshold(bilateral, thresh_val, 255, cv2.THRESH_BINARY_INV)
+        canny = cv2.Canny(bilateral, 30, 100)
+
+        raw_features = cv2.bitwise_or(bin_img, canny)
+        subject_features = cv2.bitwise_and(raw_features, mask)
+
+        # 3. Zhang-Suen Medial Axis Thinning via cv2.ximgproc
+        thinned = cv2.ximgproc.thinning(subject_features, thinningType=cv2.ximgproc.THINNING_ZHANGSUEN)
+        result_img = cv2.bitwise_not(thinned)
+
+        _, encoded_img = cv2.imencode('.png', result_img)
+        res_b64 = base64.b64encode(encoded_img.tobytes()).decode('utf-8')
+        return f"data:image/png;base64,{res_b64}"
+
+    except Exception as e:
+        print(f"[ML PROCESS ERROR] {e}")
+        return None
+
 # --- Serial Controller State ---
 serial_port = None
 serial_lock = threading.Lock()
@@ -405,6 +491,24 @@ def handle_ws_client(conn, addr):
                                 serial_port.write((gcode + "\n").encode('utf-8'))
                             except Exception as ex:
                                 print(f"[SERIAL INSTANT ERROR] {ex}")
+
+                elif msg.startswith("ml-process:"):
+                    # Format: ml-process:<sensitivity>:<base64_data>
+                    try:
+                        content = msg[11:]
+                        parts = content.split(":", 1)
+                        sens = int(parts[0]) if len(parts) > 1 and parts[0].isdigit() else 30
+                        b64data = parts[1] if len(parts) > 1 else parts[0]
+                        
+                        print(f"[ML] Processing image on CPU (sensitivity={sens})...")
+                        res_img = process_ml_image(b64data, sensitivity=sens)
+                        if res_img:
+                            conn.sendall(make_ws_frame(f"ml-result:{res_img}"))
+                        else:
+                            conn.sendall(make_ws_frame("ml-error:Failed to process image"))
+                    except Exception as ex:
+                        print(f"[ML ROUTE ERROR] {ex}")
+                        conn.sendall(make_ws_frame("ml-error:Processing exception"))
 
                 elif msg.startswith("gcode-plot:"):
                     # Plotting moves: append to queue in order so every move executes
