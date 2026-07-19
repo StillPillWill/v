@@ -54,11 +54,25 @@ export class ImagePlotter {
 
   loadFromFile(file) {
     return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload  = () => { this.imageBitmap = img; URL.revokeObjectURL(url); resolve(); };
-      img.onerror = reject;
-      img.src = url;
+      if (window.createImageBitmap) {
+        createImageBitmap(file).then(bitmap => {
+          this.imageBitmap = bitmap;
+          this._rawSourceBitmap = bitmap;
+          resolve();
+        }).catch(err => {
+          const url = URL.createObjectURL(file);
+          const img = new Image();
+          img.onload = () => { this.imageBitmap = img; this._rawSourceBitmap = img; resolve(); };
+          img.onerror = reject;
+          img.src = url;
+        });
+      } else {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => { this.imageBitmap = img; this._rawSourceBitmap = img; resolve(); };
+        img.onerror = reject;
+        img.src = url;
+      }
     });
   }
 
@@ -68,18 +82,40 @@ export class ImagePlotter {
       snap.width  = videoEl.videoWidth  || 640;
       snap.height = videoEl.videoHeight || 480;
       snap.getContext('2d').drawImage(videoEl, 0, 0);
-      const img = new Image();
-      img.onload = () => { this.imageBitmap = img; resolve(); };
-      img.src = snap.toDataURL('image/jpeg', 0.92);
+      if (window.createImageBitmap) {
+        createImageBitmap(snap).then(bitmap => {
+          this.imageBitmap = bitmap;
+          this._rawSourceBitmap = bitmap;
+          resolve();
+        });
+      } else {
+        const img = new Image();
+        img.onload = () => { this.imageBitmap = img; this._rawSourceBitmap = img; resolve(); };
+        img.src = snap.toDataURL('image/jpeg', 0.92);
+      }
     });
   }
 
   loadFromDataUrl(dataUrl) {
     return new Promise((resolve, reject) => {
+      const src = dataUrl.startsWith('data:') ? dataUrl : ('data:image/png;base64,' + dataUrl);
       const img = new Image();
-      img.onload  = () => { this.imageBitmap = img; resolve(); };
-      img.onerror = reject;
-      img.src = dataUrl;
+      img.onload = () => {
+        if (window.createImageBitmap) {
+          createImageBitmap(img).then(bmp => {
+            this.imageBitmap = bmp;
+            resolve();
+          }).catch(() => {
+            this.imageBitmap = img;
+            resolve();
+          });
+        } else {
+          this.imageBitmap = img;
+          resolve();
+        }
+      };
+      img.onerror = () => reject(new Error('Failed to decode data URL image in browser'));
+      img.src = src;
     });
   }
 
