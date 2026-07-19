@@ -67,6 +67,73 @@ def _clean_b64_decode(b64_str):
         b64_str += "=" * (4 - missing_padding)
     return base64.b64decode(b64_str)
 
+def _zhang_suen_thinning_np(bin_img):
+    img = (bin_img > 0).astype(np.uint8)
+    h, w = img.shape
+    changed = True
+    iter_count = 0
+    while changed and iter_count < 60:
+        changed = False
+        iter_count += 1
+        p2 = np.roll(img, -1, axis=0)
+        p3 = np.roll(np.roll(img, -1, axis=0), 1, axis=1)
+        p4 = np.roll(img, 1, axis=1)
+        p5 = np.roll(np.roll(img, 1, axis=0), 1, axis=1)
+        p6 = np.roll(img, 1, axis=0)
+        p7 = np.roll(np.roll(img, 1, axis=0), -1, axis=1)
+        p8 = np.roll(img, -1, axis=1)
+        p9 = np.roll(np.roll(img, -1, axis=0), -1, axis=1)
+        p2[0, :] = 0; p3[0, :] = 0; p9[0, :] = 0
+        p6[-1, :] = 0; p5[-1, :] = 0; p7[-1, :] = 0
+        p8[:, 0] = 0; p7[:, 0] = 0; p9[:, 0] = 0
+        p4[:, -1] = 0; p3[:, -1] = 0; p5[:, -1] = 0
+
+        B = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9
+        cond_B = (B >= 2) & (B <= 6)
+        A = ((p2 == 0) & (p3 == 1)).astype(np.uint8) + \
+            ((p3 == 0) & (p4 == 1)).astype(np.uint8) + \
+            ((p4 == 0) & (p5 == 1)).astype(np.uint8) + \
+            ((p5 == 0) & (p6 == 1)).astype(np.uint8) + \
+            ((p6 == 0) & (p7 == 1)).astype(np.uint8) + \
+            ((p7 == 0) & (p8 == 1)).astype(np.uint8) + \
+            ((p8 == 0) & (p9 == 1)).astype(np.uint8) + \
+            ((p9 == 0) & (p2 == 1)).astype(np.uint8)
+        cond_A = (A == 1)
+        c1_1 = (p2 * p4 * p6 == 0)
+        c1_2 = (p4 * p6 * p8 == 0)
+        del1 = (img == 1) & cond_B & cond_A & c1_1 & c1_2
+        if np.any(del1): img[del1] = 0; changed = True
+
+        p2 = np.roll(img, -1, axis=0)
+        p3 = np.roll(np.roll(img, -1, axis=0), 1, axis=1)
+        p4 = np.roll(img, 1, axis=1)
+        p5 = np.roll(np.roll(img, 1, axis=0), 1, axis=1)
+        p6 = np.roll(img, 1, axis=0)
+        p7 = np.roll(np.roll(img, 1, axis=0), -1, axis=1)
+        p8 = np.roll(img, -1, axis=1)
+        p9 = np.roll(np.roll(img, -1, axis=0), -1, axis=1)
+        p2[0, :] = 0; p3[0, :] = 0; p9[0, :] = 0
+        p6[-1, :] = 0; p5[-1, :] = 0; p7[-1, :] = 0
+        p8[:, 0] = 0; p7[:, 0] = 0; p9[:, 0] = 0
+        p4[:, -1] = 0; p3[:, -1] = 0; p5[:, -1] = 0
+
+        B = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9
+        cond_B = (B >= 2) & (B <= 6)
+        A = ((p2 == 0) & (p3 == 1)).astype(np.uint8) + \
+            ((p3 == 0) & (p4 == 1)).astype(np.uint8) + \
+            ((p4 == 0) & (p5 == 1)).astype(np.uint8) + \
+            ((p5 == 0) & (p6 == 1)).astype(np.uint8) + \
+            ((p6 == 0) & (p7 == 1)).astype(np.uint8) + \
+            ((p7 == 0) & (p8 == 1)).astype(np.uint8) + \
+            ((p8 == 0) & (p9 == 1)).astype(np.uint8) + \
+            ((p9 == 0) & (p2 == 1)).astype(np.uint8)
+        cond_A = (A == 1)
+        c2_1 = (p2 * p4 * p8 == 0)
+        c2_2 = (p2 * p6 * p8 == 0)
+        del2 = (img == 1) & cond_B & cond_A & c2_1 & c2_2
+        if np.any(del2): img[del2] = 0; changed = True
+    return (img * 255).astype(np.uint8)
+
 def process_ml_image(base64_str, sensitivity=30):
     global ml_model, ml_preprocess
     try:
@@ -127,8 +194,12 @@ def process_ml_image(base64_str, sensitivity=30):
         raw_features = cv2.bitwise_or(bin_img, canny)
         subject_features = cv2.bitwise_and(raw_features, mask)
 
-        # 3. Zhang-Suen Medial Axis Thinning via cv2.ximgproc
-        thinned = cv2.ximgproc.thinning(subject_features, thinningType=cv2.ximgproc.THINNING_ZHANGSUEN)
+        # 3. Medial Axis Thinning (cv2.ximgproc if available, else numpy fallback)
+        if hasattr(cv2, 'ximgproc') and hasattr(cv2.ximgproc, 'thinning'):
+            thinned = cv2.ximgproc.thinning(subject_features, thinningType=cv2.ximgproc.THINNING_ZHANGSUEN)
+        else:
+            thinned = _zhang_suen_thinning_np(subject_features)
+
         result_img = cv2.bitwise_not(thinned)
 
         _, encoded_img = cv2.imencode('.png', result_img)
