@@ -1104,16 +1104,25 @@ function _plotterRunProcess() {
 
       setPlotterStatus('🤖 Running PyTorch AI Subject Segmentation on CPU…');
 
-      // Use source image bitmap to create base64 JPEG for Python ML pipeline
+      // Use source image bitmap to create compact base64 JPEG for Python ML pipeline
       const cv = document.createElement('canvas');
       const srcImg = imagePlotter._rawSourceBitmap || imagePlotter.imageBitmap;
-      const w = srcImg.naturalWidth || srcImg.width || 640;
-      const h = srcImg.naturalHeight || srcImg.height || 480;
+      const srcW = srcImg.naturalWidth || srcImg.width || 640;
+      const srcH = srcImg.naturalHeight || srcImg.height || 480;
+
+      // Downscale to max 800px for instant transfer and zero truncation
+      const maxDim = 800;
+      let w = srcW, h = srcH;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) { h = Math.round(h * (maxDim / w)); w = maxDim; }
+        else { w = Math.round(w * (maxDim / h)); h = maxDim; }
+      }
+
       cv.width = w;
       cv.height = h;
       const ctx = cv.getContext('2d');
       ctx.drawImage(srcImg, 0, 0, w, h);
-      const b64 = cv.toDataURL('image/jpeg', 0.92);
+      const b64 = cv.toDataURL('image/jpeg', 0.85);
       const rawB64 = b64.includes(',') ? b64.split(',', 2)[1] : b64;
       const threshold = parseInt(dom.plotterThreshold.value, 10) || 30;
 

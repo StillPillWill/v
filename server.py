@@ -37,7 +37,8 @@ import torch
 import torchvision
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 ml_model = None
 ml_preprocess = None
